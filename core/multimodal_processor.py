@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from google import genai
@@ -10,14 +11,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class MultimodalProcessor:
-    """Processa múltiplos arquivos (PDFs e áudios) usando a API do Gemini 2.5/3.6 Flash."""
+    """Processa arquivos multimodais com tentativas automáticas em caso de picos de demanda."""
 
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
-            logger.warning("GEMINI_API_KEY não encontrada no ambiente.")
-        self.client = genai.Client(api_key=api_key)
-        self.model_name = "gemini-2.5-flash"  # Ou gemini-3.6-flash conforme configurado
+            logger.error("ATENÇÃO: GEMINI_API_KEY não foi encontrada no arquivo .env ou no ambiente!")
+        
+        self.client = genai.Client(api_key=api_key) if api_key else genai.Client()
+        self.model_name = "gemini-3.6-flash"
 
     def analyze_lesson_materials(
         self, 
@@ -26,76 +28,80 @@ class MultimodalProcessor:
         lesson_name: str, 
         unit_code: str
     ) -> Dict[str, Any]:
-        """Envia múltiplos slides e áudios para o Gemini extrair resumos estruturados e flashcards no formato correto."""
-        
+        """Envia slides e áudios para o Gemini com política de re-tentativa (Retry) para evitar erros 503."""
         uploaded_files = []
         try:
             prompt = f"""
-            Você é um especialista médico sênior e professor de medicina. 
-            Analise os materiais fornecidos para a aula '{lesson_name}' da unidade '{unit_code}'.
+            Você é um médico especialista e professor sênior. 
+            Analise rigorosamente os materiais fornecidos (slides e áudio) para a aula '{lesson_name}' da unidade '{unit_code}'.
             
-            Sua tarefa é gerar um JSON estrito contendo:
-            1. "summary": Um resumo clínico estruturado, focado em fisiopatologia, diagnóstico, conduta e pérolas clínicas.
-            2. "flashcards": Uma lista de flashcards rigorosamente dividida entre cartões do tipo "basic" (frente e verso) e "cloze" (com lacunas no formato Anki {{c1::termo}}).
+            Sua tarefa é retornar estritamente um JSON contendo:
+            1. "transcript": Uma transcrição detalhada, fluida e estruturada de todo o conteúdo falado no áudio em formato de texto corrido acadêmico.
+            2. "summary": Um resumo clínico estruturado, focado em fisiopatologia, diagnóstico, conduta e pérolas clínicas.
             
-            O JSON de saída deve ter exatamente esta estrutura:
+            Retorne EXATAMENTE um JSON válido no seguinte formato e nada mais:
             {{
-              "summary": "Texto do resumo em markdown...",
-              "flashcards": [
-                {{
-                  "type": "basic",
-                  "header": "{unit_code} - {lesson_name}",
-                  "front": "Qual a principal indicação de...",
-                  "back": "A indicação principal é...",
-                  "clinical_pearl": "Sempre atentar para o sinal clínico X."
-                }},
-                {{
-                  "type": "cloze",
-                  "header": "{unit_code} - {lesson_name}",
-                  "text": "O tratamento de primeira linha para a condição é a {{c1::hidratação venosa}} associada a {{c2::antibioticoterapia}}.",
-                  "back_extra": "Evitar corticoide precoce em pacientes com infecção fúngica."
-                }}
-              ]
+              "transcript": "Transcrição detalhada do áudio...",
+              "summary": "Resumo clínico detalhado..."
             }}
-            Retorne APENAS o JSON puro, sem blocos de código markdown adicionais se possível, ou garantindo que seja um JSON válido.
             """
 
             contents = [prompt]
-
-            # Envia múltiplos arquivos de slides (PDF)
             for sp in slide_paths:
                 if sp and sp.exists():
+                    logger.info(f"Fazendo upload do slide para o Gemini: {sp.name}")
                     f_ref = self.client.files.upload(file=str(sp))
                     uploaded_files.append(f_ref)
                     contents.append(f_ref)
 
-            # Envia múltiplos arquivos de áudio (MP3/M4A)
             for ap in audio_paths:
                 if ap and ap.exists():
+                    logger.info(f"Fazendo upload do áudio para o Gemini: {ap.name}")
                     f_ref = self.client.files.upload(file=str(ap))
                     uploaded_files.append(f_ref)
                     contents.append(f_ref)
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                    response_mime_type="application/json"
-                )
-            )
+            # Sistema de Tentativas (Retry) para contornar picos de trânsito (503)
+            max_retries = 3
+            response = None
+            
+            for attempt in range(max_retries):
+                try:
+                    logger.info(f"Enviando requisição multimodal (Tentativa {attempt + 1}/{max_retries})...")
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=contents,
+                        config=types.GenerateContentConfig(
+                            temperature=0.2,
+                            response_mime_type="application/json"
+                        )
+                    )
+                    break
+                except Exception as api_err:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Servidor com alta demanda (Tentativa {attempt + 1}), aguardando 10s para tentar novamente...")
+                        time.sleep(10)
+                    else:
+                        raise api_err
 
+            logger.info("Resposta bruta do Gemini recebida com sucesso.")
             result_json = json.loads(response.text)
+
+            # Salva automaticamente a transcrição como arquivo .txt na pasta da aula
+            if audio_paths and audio_paths[0].parent.exists() and "transcript" in result_json:
+                transcript_path = audio_paths[0].parent / "transcricao_aula.txt"
+                transcript_path.write_text(result_json["transcript"], encoding="utf-8")
+                logger.info(f"Transcrição salva com sucesso em: {transcript_path}")
+
             return result_json
 
         except Exception as e:
-            logger.error(f"Erro ao processar materiais no Gemini: {e}")
+            logger.error(f"Erro crítico ao processar materiais no Gemini: {e}")
             return {
-                "summary": f"Erro ao gerar resumo automático: {e}",
-                "flashcards": []
+                "transcript": f"Erro ao gerar transcrição: {e}",
+                "summary": f"Erro ao gerar resumo automático: {e}"
             }
         finally:
-            # Limpa arquivos enviados para o storage temporário do Gemini
             for f_ref in uploaded_files:
                 try:
                     self.client.files.delete(name=f_ref.name)

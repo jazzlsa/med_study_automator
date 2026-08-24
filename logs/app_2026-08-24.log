@@ -92,3 +92,272 @@
 2026-08-24 14:43:37 | ERROR    | multimodal_processor:92 - Erro ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
 2026-08-24 14:43:39 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
 2026-08-24 14:43:41 | INFO     | orchestrator:31 - Baralho importado com sucesso no Anki!
+2026-08-24 14:57:16 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 14:57:16 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 14:57:21 | ERROR    | notebooklm_client:44 - Erro ao adicionar fonte SLIDES-AMIGDALITE.pdf ao NotebookLM: Command '['notebooklm', 'source', 'add', 'notebooks/b58511b0-23af-490e-89ce-71a4d68333a1', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\SLIDES-AMIGDALITE.pdf', '--json']' returned non-zero exit status 2.
+2026-08-24 15:07:10 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:07:10 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:07:19 | ERROR    | notebooklm_client:43 - Erro ao adicionar fonte SLIDES-AMIGDALITE.pdf ao NotebookLM: Command '['notebooklm', 'source', 'add', 'notebooks/4f729898-e92a-438d-9264-4632b799999f', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\SLIDES-AMIGDALITE.pdf', '--json']' returned non-zero exit status 2.
+2026-08-24 15:07:19 | ERROR    | notebooklm_client:43 - Erro ao adicionar fonte Amigdalite.mp3 ao NotebookLM: Command '['notebooklm', 'source', 'add', 'notebooks/4f729898-e92a-438d-9264-4632b799999f', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3', '--json']' returned non-zero exit status 2.
+2026-08-24 15:07:19 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 4f729898-e92a-438d-9264-4632b799999f)
+2026-08-24 15:07:29 | ERROR    | multimodal_processor:92 - Erro ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:07:30 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:07:33 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:15:28 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:15:28 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:15:28 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:15:33 | INFO     | notebooklm_client:18 - Saída CLI NotebookLM: {
+  "notebook": {
+    "id": "045dbe42-67d1-437c-b957-a33733fe8ad1",
+    "title": "UC16 - Aula 6",
+    "role": "owner",
+    "created_at": "2026-08-24T18:15:33+00:00",
+    "last_viewed_at": "2026-08-24T18:15:33+00:00",
+    "modified_at": "2026-08-24T18:15:33+00:00"
+  }
+}
+
+2026-08-24 15:15:33 | INFO     | notebooklm_client:43 - Adicionando fonte: notebooklm source add notebooks/045dbe42-67d1-437c-b957-a33733fe8ad1 G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf --json
+2026-08-24 15:15:34 | ERROR    | notebooklm_client:48 - Erro ao adicionar fonte CLI: 
+2026-08-24 15:15:34 | INFO     | notebooklm_client:43 - Adicionando fonte: notebooklm source add notebooks/045dbe42-67d1-437c-b957-a33733fe8ad1 G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3 --json
+2026-08-24 15:15:34 | ERROR    | notebooklm_client:48 - Erro ao adicionar fonte CLI: 
+2026-08-24 15:15:34 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 045dbe42-67d1-437c-b957-a33733fe8ad1)
+2026-08-24 15:15:44 | INFO     | multimodal_processor:68 - Enviando requisição multimodal para o Gemini...
+2026-08-24 15:15:44 | ERROR    | multimodal_processor:83 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:15:46 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:15:48 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:19:12 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:19:12 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:19:12 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:19:16 | INFO     | notebooklm_client:18 - Saída CLI NotebookLM: {
+  "notebook": {
+    "id": "c2388843-1ed5-4f74-a757-e460e3b49e2c",
+    "title": "UC16 - Aula 6",
+    "role": "owner",
+    "created_at": "2026-08-24T18:19:16+00:00",
+    "last_viewed_at": "2026-08-24T18:19:16+00:00",
+    "modified_at": "2026-08-24T18:19:16+00:00"
+  }
+}
+
+2026-08-24 15:19:16 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/c2388843-1ed5-4f74-a757-e460e3b49e2c G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:19:17 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf)
+
+2026-08-24 15:19:17 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/c2388843-1ed5-4f74-a757-e460e3b49e2c G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:19:17 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3)
+
+2026-08-24 15:19:17 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: c2388843-1ed5-4f74-a757-e460e3b49e2c)
+2026-08-24 15:19:29 | INFO     | multimodal_processor:67 - Enviando requisição multimodal para o Gemini...
+2026-08-24 15:19:29 | ERROR    | multimodal_processor:82 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ModelService.ListModels to see the list of available models and their supported methods.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:19:31 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:19:33 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:21:58 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:21:58 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:21:58 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:22:03 | INFO     | notebooklm_client:18 - Saída CLI NotebookLM: {
+  "notebook": {
+    "id": "52a32bb3-5b88-4cc7-a623-c4a2d3cec2c4",
+    "title": "UC16 - Aula 6",
+    "role": "owner",
+    "created_at": "2026-08-24T18:22:02+00:00",
+    "last_viewed_at": "2026-08-24T18:22:03+00:00",
+    "modified_at": "2026-08-24T18:22:03+00:00"
+  }
+}
+
+2026-08-24 15:22:03 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/52a32bb3-5b88-4cc7-a623-c4a2d3cec2c4 G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:22:03 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf)
+
+2026-08-24 15:22:03 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/52a32bb3-5b88-4cc7-a623-c4a2d3cec2c4 G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:22:04 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3)
+
+2026-08-24 15:22:04 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 52a32bb3-5b88-4cc7-a623-c4a2d3cec2c4)
+2026-08-24 15:22:04 | INFO     | multimodal_processor:60 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:22:07 | INFO     | multimodal_processor:67 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:22:14 | INFO     | multimodal_processor:72 - Enviando requisição multimodal para o modelo gemini-2.5-flash...
+2026-08-24 15:22:14 | ERROR    | multimodal_processor:87 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:22:16 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:22:18 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:26:04 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:26:04 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:26:04 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:26:09 | INFO     | notebooklm_client:18 - Saída CLI NotebookLM: {
+  "notebook": {
+    "id": "980c4c17-579e-403e-8c7e-5065149a83ea",
+    "title": "UC16 - Aula 6",
+    "role": "owner",
+    "created_at": "2026-08-24T18:26:08+00:00",
+    "last_viewed_at": "2026-08-24T18:26:09+00:00",
+    "modified_at": "2026-08-24T18:26:09+00:00"
+  }
+}
+
+2026-08-24 15:26:09 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/980c4c17-579e-403e-8c7e-5065149a83ea G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:26:09 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf)
+
+2026-08-24 15:26:09 | INFO     | notebooklm_client:45 - Adicionando fonte via CLI: notebooklm source add notebooks/980c4c17-579e-403e-8c7e-5065149a83ea G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:26:10 | ERROR    | notebooklm_client:50 - Erro ao adicionar fonte CLI: Usage: notebooklm source add [OPTIONS] CONTENT
+Try 'notebooklm source add --help' for help.
+
+Error: Got unexpected extra argument (G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3)
+
+2026-08-24 15:26:10 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 980c4c17-579e-403e-8c7e-5065149a83ea)
+2026-08-24 15:26:10 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:26:15 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:26:26 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 15:27:21 | INFO     | multimodal_processor:81 - Resposta bruta do Gemini recebida com sucesso.
+2026-08-24 15:27:41 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:27:43 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:29:18 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:29:18 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:29:18 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:29:25 | INFO     | notebooklm_client:46 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:32:06 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:32:06 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:32:06 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:32:12 | INFO     | notebooklm_client:51 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:32:19 | INFO     | notebooklm_client:51 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:32:27 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: e62b4520-3801-428f-865f-6c7e1d5bf1b1)
+2026-08-24 15:32:27 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:32:31 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:32:39 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 15:33:22 | ERROR    | multimodal_processor:86 - Erro crítico ao processar materiais no Gemini: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-08-24 15:33:23 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:33:26 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:34:23 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:34:23 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:34:23 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:34:29 | INFO     | notebooklm_client:59 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:34:36 | INFO     | notebooklm_client:59 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:34:44 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 5b0b38a0-9d6e-44f7-bc01-1a46af77adfe)
+2026-08-24 15:34:44 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:34:46 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:35:29 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 15:36:39 | INFO     | multimodal_processor:81 - Resposta bruta do Gemini recebida com sucesso.
+2026-08-24 15:36:41 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:36:43 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:44:29 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:44:29 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:44:29 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:44:36 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:44:50 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para SLIDES-AMIGDALITE.pdf: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\SLIDES-AMIGDALITE.pdf']' returned non-zero exit status 1.
+2026-08-24 15:44:52 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:45:06 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para Amigdalite.mp3: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3']' returned non-zero exit status 1.
+2026-08-24 15:45:06 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 15662f3c-a6ed-44e9-b2e7-935211fe6a05)
+2026-08-24 15:45:06 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:45:09 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:45:15 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 15:45:33 | ERROR    | multimodal_processor:86 - Erro crítico ao processar materiais no Gemini: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-08-24 15:45:34 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:45:37 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:48:51 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:48:51 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:48:51 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:48:58 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:49:11 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para SLIDES-AMIGDALITE.pdf: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\SLIDES-AMIGDALITE.pdf']' returned non-zero exit status 1.
+2026-08-24 15:49:13 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:49:22 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 15:49:27 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 93f1bcdb-55cf-4266-be93-3bbfe7c9cd1e)
+2026-08-24 15:49:27 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:50:03 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:50:11 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-2.0-flash...
+2026-08-24 15:50:11 | ERROR    | multimodal_processor:86 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:50:41 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:50:43 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:54:52 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:54:52 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:54:52 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:54:58 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:55:02 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 15:55:09 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:55:23 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para Amigdalite.mp3: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3']' returned non-zero exit status 1.
+2026-08-24 15:55:23 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 848631de-cb97-4b31-9d4c-476e5b52b5af)
+2026-08-24 15:55:23 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:55:26 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:55:33 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-2.5-flash...
+2026-08-24 15:55:33 | ERROR    | multimodal_processor:86 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 15:55:35 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 15:55:37 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 15:58:02 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 15:58:02 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 15:58:02 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 15:58:08 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 15:58:21 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para SLIDES-AMIGDALITE.pdf: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\SLIDES-AMIGDALITE.pdf']' returned non-zero exit status 1.
+2026-08-24 15:58:23 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 15:58:36 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para Amigdalite.mp3: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3']' returned non-zero exit status 1.
+2026-08-24 15:58:36 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: fe27ad4e-180b-4b9f-a869-ec32abfed7d6)
+2026-08-24 15:58:36 | INFO     | multimodal_processor:59 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 15:58:39 | INFO     | multimodal_processor:66 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 15:58:46 | INFO     | multimodal_processor:71 - Enviando requisição multimodal para o modelo gemini-2.5-flash...
+2026-08-24 15:58:46 | ERROR    | multimodal_processor:86 - Erro crítico ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 16:00:07 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 16:00:10 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 16:00:36 | INFO     | orchestrator:49 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 16:00:36 | INFO     | orchestrator:56 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 16:00:36 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 16:00:42 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 16:00:46 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 16:00:53 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 16:01:01 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 16:01:07 | INFO     | orchestrator:64 - Fontes adicionadas com sucesso ao NotebookLM (ID: 1bf70e48-c5f8-4fd3-a8b1-4ec91d1b4457)
+2026-08-24 16:01:07 | INFO     | multimodal_processor:61 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 16:01:11 | INFO     | multimodal_processor:68 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 16:01:20 | INFO     | multimodal_processor:73 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 16:04:27 | ERROR    | multimodal_processor:95 - Erro crítico ao processar materiais no Gemini: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-08-24 16:04:28 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 16:04:31 | INFO     | orchestrator:32 - Baralho importado com sucesso no Anki!
+2026-08-24 16:11:00 | INFO     | drive_sync:46 - Encontradas 1 aulas para a unidade UC16.
+2026-08-24 16:12:16 | INFO     | drive_sync:46 - Encontradas 1 aulas para a unidade UC16.
+2026-08-24 16:12:21 | INFO     | drive_sync:46 - Encontradas 1 aulas para a unidade UC16.
+2026-08-24 16:12:21 | INFO     | orchestrator:28 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 16:12:21 | INFO     | orchestrator:50 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 16:12:21 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 16:12:27 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 16:12:33 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 16:12:40 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 16:12:54 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para Amigdalite.mp3: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3']' returned non-zero exit status 1.
+2026-08-24 16:12:54 | INFO     | orchestrator:59 - Fontes processadas e enviadas ao NotebookLM (ID: 2f031c5a-5541-46e9-b625-b892ff3324eb)
+2026-08-24 16:12:54 | INFO     | orchestrator:62 - Extraindo resumos e transcrição via Gemini...
+2026-08-24 16:12:54 | INFO     | multimodal_processor:61 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 16:12:57 | INFO     | multimodal_processor:68 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 16:13:04 | INFO     | multimodal_processor:73 - Enviando requisição multimodal para o modelo gemini-3.6-flash...
+2026-08-24 16:14:45 | ERROR    | multimodal_processor:95 - Erro crítico ao processar materiais no Gemini: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-08-24 16:14:46 | INFO     | db:46 - Aula Aula 6 salva no banco de dados local.
+2026-08-24 16:14:46 | INFO     | orchestrator:77 - Aula Aula 6 processada com sucesso no NotebookLM!
+2026-08-24 16:29:06 | INFO     | drive_sync:46 - Encontradas 1 aulas para a unidade UC16.
+2026-08-24 16:29:26 | INFO     | drive_sync:46 - Encontradas 1 aulas para a unidade UC16.
+2026-08-24 16:29:27 | INFO     | orchestrator:29 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 16:29:27 | INFO     | orchestrator:39 - Criando NotebookLM para: UC16 - Aula 6
+2026-08-24 16:29:27 | INFO     | notebooklm_client:16 - Executando CLI: notebooklm create UC16 - Aula 6 --json
+2026-08-24 16:29:33 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\SLIDES-AMIGDALITE.pdf
+2026-08-24 16:29:37 | INFO     | notebooklm_client:64 - Solicitando geração automática de áudio e guia de estudo no NotebookLM...
+2026-08-24 16:29:45 | INFO     | notebooklm_client:53 - Adicionando fonte via CLI: notebooklm source add G:\Meu Drive\MedStudy_Aulas\UC16\Aula 6\Amigdalite.mp3
+2026-08-24 16:29:58 | WARNING  | notebooklm_client:70 - Erro ao injetar fonte ou gerar estúdio para Amigdalite.mp3: Command '['notebooklm', 'source', 'add', 'G:\\Meu Drive\\MedStudy_Aulas\\UC16\\Aula 6\\Amigdalite.mp3']' returned non-zero exit status 1.
+2026-08-24 16:29:58 | INFO     | orchestrator:50 - NotebookLM pronto! Link: https://notebooklm.google.com/notebook/bb2a9645-47c3-4d9d-a90a-44afc556a234
+2026-08-24 16:29:58 | INFO     | sheets_client:19 - [Sheets SIMULADO] Aula 'Aula 6' (UC16) -> Link NotebookLM: https://notebooklm.google.com/notebook/bb2a9645-47c3-4d9d-a90a-44afc556a234
+2026-08-24 16:29:58 | INFO     | orchestrator:56 - Extraindo resumos e transcrição via Gemini...
+2026-08-24 16:29:58 | INFO     | multimodal_processor:52 - Fazendo upload do slide para o Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 16:31:22 | INFO     | multimodal_processor:59 - Fazendo upload do áudio para o Gemini: Amigdalite.mp3
+2026-08-24 16:31:30 | INFO     | multimodal_processor:70 - Enviando requisição multimodal (Tentativa 1/3)...
+2026-08-24 16:31:35 | WARNING  | multimodal_processor:82 - Servidor com alta demanda (Tentativa 1), aguardando 10s para tentar novamente...
+2026-08-24 16:31:45 | INFO     | multimodal_processor:70 - Enviando requisição multimodal (Tentativa 2/3)...
+2026-08-24 16:32:44 | WARNING  | multimodal_processor:82 - Servidor com alta demanda (Tentativa 2), aguardando 10s para tentar novamente...
+2026-08-24 16:32:54 | INFO     | multimodal_processor:70 - Enviando requisição multimodal (Tentativa 3/3)...
+2026-08-24 16:35:23 | ERROR    | multimodal_processor:99 - Erro crítico ao processar materiais no Gemini: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-08-24 16:35:24 | INFO     | db:46 - Aula Aula 6 salva no banco de dados local.
+2026-08-24 16:35:24 | INFO     | orchestrator:71 - Pipeline concluído com sucesso para a aula Aula 6!

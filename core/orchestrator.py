@@ -1,108 +1,78 @@
 import time
 from pathlib import Path
-from typing import List, Union
+from typing import List, Union, Optional, Any
 from core.multimodal_processor import multimodal_processor
-from core.anki_generator import anki_generator
+from core.notebooklm_client import notebooklm_client
+from core.sheets_client import sheets_client
 from database.db import db_manager
 from utils.logger import logger
-import requests
-import json
 
 class Orchestrator:
-    """Orquestra o pipeline completo: Varredura de Pasta ➔ Gemini ➔ Anki & Banco de Dados."""
+    """Orquestra o pipeline focado no NotebookLM, transcrições e Sheets."""
 
     def __init__(self):
         pass
-
-    def _send_to_anki(self, apkg_path: Path) -> bool:
-        """Envia o baralho gerado para o Anki via AnkiConnect local."""
-        if not apkg_path.exists():
-            return False
-        
-        request_json = json.dumps({
-            "action": "importPackage",
-            "version": 6,
-            "params": {"path": str(apkg_path.absolute())}
-        })
-        try:
-            response = requests.post("http://localhost:8765", data=request_json, timeout=5)
-            res_obj = response.json()
-            if res_obj.get("error") is None:
-                logger.info("Baralho importado com sucesso no Anki!")
-                return True
-            else:
-                logger.warning(f"Erro do AnkiConnect: {res_obj.get('error')}")
-                return False
-        except Exception:
-            logger.warning("Anki fechado ou AnkiConnect não detectado. O arquivo .apkg foi salvo para download manual.")
-            return False
 
     def process_lesson(
         self,
         unit_code: str,
         lesson_name: str,
-        slide_path: Union[Path, List[Path], None] = None,
-        audio_path: Union[Path, List[Path], None] = None,
-        force_reprocess: bool = True,
-        sync_anki: bool = True
-    ) -> dict:
-        start_time = time.time()
-        logger.info(f"Iniciando processamento da aula: [{unit_code}] {lesson_name}")
+        slide_paths: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        audio_paths: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        slide_path: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        audio_path: Optional[Union[str, Path, List[Union[str, Path]]]] = None,
+        force_reprocess: Optional[bool] = None,
+        **kwargs: Any
+    ) -> bool:
+        """Processa a aula, cria o NotebookLM, gera o Estúdio e registra na planilha."""
+        try:
+            logger.info(f"Iniciando processamento da aula: [{unit_code}] {lesson_name}")
 
-        # Padroniza para listas de arquivos
-        slides = []
-        if isinstance(slide_path, list):
-            slides = [p for p in slide_path if p and Path(p).exists()]
-        elif slide_path and Path(slide_path).exists():
-            slides = [Path(slide_path)]
+            raw_slides = slide_paths if slide_paths is not None else slide_path
+            raw_audios = audio_paths if audio_paths is not None else audio_path
 
-        audios = []
-        if isinstance(audio_path, list):
-            audios = [p for p in audio_path if p and Path(p).exists()]
-        elif audio_path and Path(audio_path).exists():
-            audios = [Path(audio_path)]
+            slides = [Path(raw_slides)] if isinstance(raw_slides, (str, Path)) else [Path(p) for p in raw_slides if p] if isinstance(raw_slides, list) else []
+            audios = [Path(raw_audios)] if isinstance(raw_audios, (str, Path)) else [Path(p) for p in raw_audios if p] if isinstance(raw_audios, list) else []
 
-        # 1. Análise Multimodal com Gemini
-        gemini_result = multimodal_processor.analyze_lesson_materials(
-            slide_paths=slides,
-            audio_paths=audios,
-            lesson_name=lesson_name,
-            unit_code=unit_code
-        )
+            # 1. Cria o NotebookLM para a aula
+            notebook_title = f"{unit_code} - {lesson_name}"
+            logger.info(f"Criando NotebookLM para: {notebook_title}")
+            notebook_id = notebooklm_client.create_notebook(notebook_title)
 
-        summary_text = gemini_result.get("summary", "")
-        cards_data = gemini_result.get("flashcards", [])
+            # 2. Injeta as fontes no NotebookLM
+            if notebook_id:
+                for slide in slides:
+                    notebooklm_client.add_source_to_notebook(notebook_id, slide)
+                for audio in audios:
+                    notebooklm_client.add_source_to_notebook(notebook_id, audio)
+                
+                notebook_url = f"https://notebooklm.google.com/notebook/{notebook_id}"
+                logger.info(f"NotebookLM pronto! Link: {notebook_url}")
 
-        # 2. Geração do Pacote .apkg
-        safe_lesson_name = "".join(c for c in lesson_name if c.isalnum() or c in (' ', '_', '-')).strip()
-        apkg_filename = f"{unit_code} - {safe_lesson_name}.apkg"
-        apkg_path = Path("data/output") / apkg_filename
-        
-        deck_title = f"{unit_code} :: {lesson_name}"
-        anki_generator.generate_apkg(cards_data, deck_title, apkg_path)
+                # 3. Registra o link na Planilha do Google Sheets
+                sheets_client.update_lesson_link(unit_code, lesson_name, notebook_url)
 
-        # 3. Sincronização com o Anki
-        if sync_anki:
-            self._send_to_anki(apkg_path)
+            # 4. Extrai transcrição e resumos estruturados via Gemini
+            logger.info("Extraindo resumos e transcrição via Gemini...")
+            multimodal_processor.analyze_lesson_materials(
+                slide_paths=slides,
+                audio_paths=audios,
+                lesson_name=lesson_name,
+                unit_code=unit_code
+            )
 
-        # 4. Salvamento no Banco Local (SQLite)
-        execution_time = time.time() - start_time
-        lesson_id = db_manager.save_lesson_record(
-            unit_code=unit_code,
-            lesson_name=lesson_name,
-            summary=summary_text,
-            cards_count=len(cards_data),
-            apkg_path=str(apkg_path),
-            execution_time=execution_time,
-            prompt_tokens=1500,
-            completion_tokens=800
-        )
+            # 5. Salva no banco de dados local
+            db_manager.mark_lesson_completed(
+                unit_code=unit_code,
+                lesson_name=lesson_name,
+                notebook_id=notebook_id or "N/A"
+            )
 
-        return {
-            "lesson_id": lesson_id,
-            "cards_count": len(cards_data),
-            "apkg_path": str(apkg_path),
-            "execution_time": execution_time
-        }
+            logger.info(f"Pipeline concluído com sucesso para a aula {lesson_name}!")
+            return True
+
+        except Exception as e:
+            logger.error(f"Erro crítico no orquestrador da aula {lesson_name}: {e}")
+            return False
 
 orchestrator = Orchestrator()

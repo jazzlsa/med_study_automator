@@ -1,88 +1,52 @@
 import os
-import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Dict, Any, Optional
 from utils.logger import logger
 
-
 class DriveFolderScanner:
-    """Varre o Drive local para identificar automaticamente todas as UCs, Aulas e Arquivos."""
+    """Escaneia o diretório local do Google Drive sincronizado para encontrar aulas, PDFs e áudios."""
 
-    def __init__(self, default_drive_path: Optional[str] = None):
-        self.drive_path = Path(default_drive_path) if default_drive_path else Path("G:/Meu Drive/MedStudy_Aulas")
-        if not self.drive_path.exists():
-            for p in [Path("G:/Meu Drive"), Path("G:/My Drive"), Path("data/raw")]:
-                if p.exists():
-                    self.drive_path = p
-                    break
+    def __init__(self, base_path: Optional[str] = None):
+        # Caminho padrão baseado no seu ambiente (G:\Meu Drive\MedStudy_Aulas)
+        self.base_path = Path(base_path) if base_path else Path(r"G:\Meu Drive\MedStudy_Aulas")
 
-    def scan_ucs_and_lessons(self, base_path: Optional[Path] = None) -> Dict[str, List[Dict]]:
-        """
-        Lê a pasta raiz e retorna a árvore completa:
-        {
-          "UC16": [
-             {"lesson_folder": "Aula 6", "slide": Path(...), "audio": Path(...), "files": [...]}
-          ]
-        }
-        """
-        root = base_path if base_path else self.drive_path
-        if not root or not root.exists():
-            return {}
+    def scan_local_lessons(self, unit_code: str) -> List[Dict[str, Any]]:
+        """Varre a pasta da unidade curricular e retorna uma lista de aulas detectadas com seus arquivos."""
+        lessons = []
+        unit_dir = self.base_path / unit_code
 
-        structure = {}
+        if not unit_dir.exists():
+            logger.warning(f"Diretório da unidade {unit_code} não encontrado em: {unit_dir}")
+            return lessons
 
-        # 1. Procura pastas de UCs (UC04, UC16, UC29, etc)
-        for uc_dir in sorted(root.iterdir()):
-            if not uc_dir.is_dir() or uc_dir.name.startswith("."):
-                continue
+        try:
+            # Varre subpastas (ex: 'Aula 1', 'Aula 2', 'Aula 6', etc.)
+            for lesson_folder in sorted(unit_dir.iterdir()):
+                if lesson_folder.is_dir():
+                    lesson_title = lesson_folder.name
+                    slide_path = None
+                    audio_path = None
 
-            uc_name = uc_dir.name
-            structure[uc_name] = []
+                    # Procura por arquivos de slide (.pdf) e áudio (.mp3) dentro da pasta da aula
+                    for file_path in lesson_folder.iterdir():
+                        if file_path.is_file():
+                            ext = file_path.suffix.lower()
+                            if ext == ".pdf" and not slide_path:
+                                slide_path = str(file_path)
+                            elif ext in [".mp3", ".wav", ".m4a"] and not audio_path:
+                                audio_path = str(file_path)
 
-            # 2. Procura pastas de Aulas dentro da UC
-            for item in sorted(uc_dir.iterdir()):
-                if item.is_dir() and not item.name.startswith("."):
-                    lesson_name = item.name
-                    slide_file = None
-                    audio_file = None
-                    all_files = []
-
-                    for f in item.rglob("*"):
-                        if f.is_file():
-                            all_files.append(f)
-                            suffix = f.suffix.lower()
-                            if suffix in [".pdf", ".pptx"] and not slide_file:
-                                slide_file = f
-                            elif suffix in [".mp3", ".m4a", ".wav", ".mp4", ".aac", ".ogg"] and not audio_file:
-                                audio_file = f
-
-                    structure[uc_name].append({
-                        "lesson_title": lesson_name,
-                        "folder_path": item,
-                        "slide": slide_file,
-                        "audio": audio_file,
-                        "total_files": len(all_files),
-                        "file_names": [f.name for f in all_files]
+                    lessons.append({
+                        "lesson_title": lesson_title,
+                        "slide": slide_path,
+                        "audio": audio_path,
+                        "folder_path": str(lesson_folder)
                     })
-                
-                # Caso os arquivos estejam soltos direto dentro da pasta da UC
-                elif item.is_file():
-                    suffix = item.suffix.lower()
-                    if suffix in [".pdf", ".mp3", ".m4a", ".wav"]:
-                        lesson_title = item.stem
-                        existing = next((l for l in structure[uc_name] if l["lesson_title"] == lesson_title), None)
-                        if not existing:
-                            existing = {
-                                "lesson_title": lesson_title,
-                                "folder_path": uc_dir,
-                                "slide": item if suffix in [".pdf", ".pptx"] else None,
-                                "audio": item if suffix in [".mp3", ".m4a", ".wav"] else None,
-                                "total_files": 1,
-                                "file_names": [item.name]
-                            }
-                            structure[uc_name].append(existing)
 
-        return structure
+            logger.info(f"Encontradas {len(lessons)} aulas para a unidade {unit_code}.")
+        except Exception as e:
+            logger.error(f"Erro ao escanear diretório local para {unit_code}: {e}")
 
+        return lessons
 
 drive_sync = DriveFolderScanner()

@@ -1,109 +1,72 @@
 import sqlite3
 from pathlib import Path
-from typing import Dict, Any
+from typing import List, Dict, Any
 from utils.logger import logger
 
 class DatabaseManager:
-    """Gerencia a conexão com o banco de dados SQLite para registro das aulas e estatísticas."""
+    """Gerencia o banco de dados SQLite local para controle de aulas processadas."""
 
-    def __init__(self, db_path: str = "data/medstudy.db"):
+    def __init__(self, db_path: str = "data/med_automator.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
+    def _get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
     def _init_db(self):
-        """Cria as tabelas necessárias caso não existam."""
+        """Cria a tabela de controle de aulas se ela não existir."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS lessons (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    unit_code TEXT NOT NULL,
-                    lesson_name TEXT NOT NULL,
-                    summary TEXT,
-                    cards_count INTEGER DEFAULT 0,
-                    apkg_path TEXT,
-                    execution_time REAL,
-                    prompt_tokens INTEGER DEFAULT 0,
-                    completion_tokens INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            conn.commit()
-            conn.close()
+            with self._get_connection() as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS completed_lessons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        unit_code TEXT NOT NULL,
+                        lesson_name TEXT NOT NULL,
+                        notebook_id TEXT,
+                        processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(unit_code, lesson_name)
+                    )
+                """)
+                conn.commit()
         except Exception as e:
-            logger.error(f"Erro ao inicializar banco de dados: {e}")
+            logger.error(f"Erro ao inicializar o banco de dados: {e}")
 
-    def save_lesson_record(
-        self,
-        unit_code: str,
-        lesson_name: str,
-        summary: str,
-        cards_count: int,
-        apkg_path: str,
-        execution_time: float,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0
-    ) -> int:
-        """Salva ou atualiza o registro de uma aula processada no banco local."""
+    def mark_lesson_completed(self, unit_code: str, lesson_name: str, notebook_id: str):
+        """Registra uma aula como processada e salva o ID do NotebookLM."""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            # Verifica se já existe registro para esta aula para atualizar ou inserir novo
-            cursor.execute(
-                "SELECT id FROM lessons WHERE unit_code = ? AND lesson_name = ?",
-                (unit_code, lesson_name)
-            )
-            row = cursor.fetchone()
-
-            if row:
-                lesson_id = row[0]
-                cursor.execute('''
-                    UPDATE lessons 
-                    SET summary = ?, cards_count = ?, apkg_path = ?, execution_time = ?, prompt_tokens = ?, completion_tokens = ?
-                    WHERE id = ?
-                ''', (summary, cards_count, apkg_path, execution_time, prompt_tokens, completion_tokens, lesson_id))
-            else:
-                cursor.execute('''
-                    INSERT INTO lessons (unit_code, lesson_name, summary, cards_count, apkg_path, execution_time, prompt_tokens, completion_tokens)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (unit_code, lesson_name, summary, cards_count, apkg_path, execution_time, prompt_tokens, completion_tokens))
-                lesson_id = cursor.lastrowid
-
-            conn.commit()
-            conn.close()
-            return lesson_id
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO completed_lessons (unit_code, lesson_name, notebook_id)
+                    VALUES (?, ?, ?)
+                """, (unit_code, lesson_name, notebook_id))
+                conn.commit()
+            logger.info(f"Aula {lesson_name} salva no banco de dados local.")
         except Exception as e:
-            logger.error(f"Erro ao salvar registro da aula no banco: {e}")
-            return 0
+            logger.error(f"Erro ao salvar aula no banco de dados: {e}")
 
-    def get_total_stats(self) -> Dict[str, Any]:
-        """Retorna as estatísticas totais para o dashboard na barra lateral."""
+    def get_completed_lessons(self, unit_code: str) -> List[Dict[str, Any]]:
+        """Retorna a lista de aulas já processadas para uma unidade curricular."""
+        lessons = []
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT COUNT(*), SUM(cards_count), SUM(prompt_tokens), SUM(completion_tokens) FROM lessons")
-            row = cursor.fetchone()
-            conn.close()
-
-            if row and row[0] is not None:
-                return {
-                    "total_lessons": row[0],
-                    "total_cards": row[1] or 0,
-                    "total_prompt_tokens": row[2] or 0,
-                    "total_completion_tokens": row[3] or 0
-                }
+            with self._get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT lesson_name, notebook_id, processed_at 
+                    FROM completed_lessons 
+                    WHERE unit_code = ?
+                    ORDER BY processed_at DESC
+                """, (unit_code,))
+                rows = cursor.fetchall()
+                for row in rows:
+                    lessons.append({
+                        "lesson_name": row["lesson_name"],
+                        "notebook_id": row["notebook_id"],
+                        "processed_at": row["processed_at"]
+                    })
         except Exception as e:
-            logger.error(f"Erro ao buscar estatísticas: {e}")
-
-        return {
-            "total_lessons": 0,
-            "total_cards": 0,
-            "total_prompt_tokens": 0,
-            "total_completion_tokens": 0
-        }
+            logger.error(f"Erro ao buscar aulas concluídas: {e}")
+        return lessons
 
 db_manager = DatabaseManager()
