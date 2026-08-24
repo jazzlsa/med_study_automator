@@ -2,3 +2,21 @@
 2026-08-24 10:57:27 | INFO     | main:40 - Iniciando processamento: Agressão e Defesa (UC01) - Aula_01
 2026-08-24 10:57:27 | WARNING  | main:43 - 🔍 MODO DRY-RUN ATIVADO: Nenhuma persistência ou envio externo será realizado.
 2026-08-24 10:57:27 | SUCCESS  | main:46 - Pipeline validado para UC01/Aula_01 (Simulação concluída com sucesso).
+2026-08-24 11:09:57 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:12:24 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:12:25 | INFO     | metrics:45 - ⏱️ Execução concluída em 0.5s | Tokens: 200 (Prompt: 150, Resposta: 50)
+2026-08-24 11:13:37 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:13:37 | INFO     | main:72 - Iniciando pipeline: Agressão e Defesa (UC01) - Aula_01_Inflamacao
+2026-08-24 11:13:37 | DEBUG    | main:81 - Hash do conteúdo gerado: 72e14df6bb86995404f6eef283c9f704
+2026-08-24 11:13:37 | SUCCESS  | main:115 - ✅ Aula 'Aula_01_Inflamacao' registrada no SQLite com sucesso (ID: 1).
+2026-08-24 11:13:37 | INFO     | metrics:45 - ⏱️ Execução concluída em 0.01s | Tokens: 1170 (Prompt: 850, Resposta: 320)
+2026-08-24 11:13:55 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:13:55 | INFO     | main:72 - Iniciando pipeline: Agressão e Defesa (UC01) - Aula_01_Inflamacao
+2026-08-24 11:13:55 | DEBUG    | main:81 - Hash do conteúdo gerado: 72e14df6bb86995404f6eef283c9f704
+2026-08-24 11:13:55 | WARNING  | main:86 - ⚡ [CACHE HIT] Aula 'Aula_01_Inflamacao' já foi processada anteriormente em 2026-08-24 14:13:37.
+2026-08-24 11:13:55 | INFO     | main:89 - Use a flag --force (-f) se desejar reprocessar do zero.
+2026-08-24 11:14:10 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:16:16 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:16:16 | DEBUG    | db:70 - Banco de dados inicializado em: C:\Users\jessi\AppData\Local\Temp\tmpmjp5h5o0.db
+2026-08-24 11:17:02 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:17:02 | DEBUG    | db:70 - Banco de dados inicializado em: C:\Users\jessi\AppData\Local\Temp\pytest-of-jessi\pytest-0\test_save_and_retrieve_lesson0\test.db
