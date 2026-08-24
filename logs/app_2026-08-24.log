@@ -59,3 +59,36 @@
 2026-08-24 13:10:38 | ERROR    | sheets_sync:50 - Erro ao processar abas da planilha: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
 2026-08-24 13:17:02 | ERROR    | sheets_sync:79 - Erro ao ler abas: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
 2026-08-24 14:10:17 | ERROR    | sheets_sync:79 - Erro ao ler abas: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
+2026-08-24 14:30:41 | INFO     | orchestrator:27 - Iniciando pipeline: [UC16] Aula 6 - Infecções de Vias Aéreas Superiores
+2026-08-24 14:30:41 | INFO     | slide_extractor:31 - Renderizando 41 páginas do slide: SLIDES-AMIGDALITE.pdf
+2026-08-24 14:30:43 | DEBUG    | slide_extractor:41 - 41 imagens de slides salvas em data\temp\slides\Aula 6 - Infecções de Vias Aéreas Superiores
+2026-08-24 14:30:43 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 14:30:46 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/seszofxk5h6g)
+2026-08-24 14:30:46 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: Amigdalite.mp3
+2026-08-24 14:30:53 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/gi9vpyv2iowi)
+2026-08-24 14:30:53 | INFO     | gemini_client:88 - Gerando flashcards e resumo para 'Aula 6 - Infecções de Vias Aéreas Superiores' com Gemini...
+2026-08-24 14:32:24 | WARNING  | gemini_client:109 - Servidor ocupado (tentativa 1/3). Aguardando 4s para tentar novamente...
+2026-08-24 14:33:24 | INFO     | orchestrator:27 - Iniciando pipeline: [UC16] Aula 6
+2026-08-24 14:33:26 | INFO     | slide_extractor:31 - Renderizando 41 páginas do slide: SLIDES-AMIGDALITE.pdf
+2026-08-24 14:33:28 | DEBUG    | slide_extractor:41 - 41 imagens de slides salvas em data\temp\slides\Aula 6
+2026-08-24 14:33:28 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: SLIDES-AMIGDALITE.pdf
+2026-08-24 14:33:30 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/kt4vi7mrxloh)
+2026-08-24 14:33:30 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: Amigdalite.mp3
+2026-08-24 14:33:38 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/7n0rv0w13qhi)
+2026-08-24 14:33:38 | INFO     | gemini_client:88 - Gerando flashcards e resumo para 'Aula 6' com Gemini...
+2026-08-24 14:33:41 | SUCCESS  | gemini_client:128 - Processamento concluído: 10 flashcards gerados | 5 clinical pearls.
+2026-08-24 14:33:41 | INFO     | anki_generator:233 - 📦 Pacote Anki (.apkg) gerado com sucesso: Medicina_UC16_Aula_6_-_Infecções_de_Vias_Aéreas_Superiores.apkg
+2026-08-24 14:33:43 | SUCCESS  | anki_generator:257 - ⚡ Baralho importado com sucesso para o Anki local via AnkiConnect!
+2026-08-24 14:33:43 | SUCCESS  | orchestrator:98 -  Pipeline concluído em 182.42s! 10 cards gerados.
+2026-08-24 14:34:58 | SUCCESS  | gemini_client:128 - Processamento concluído: 12 flashcards gerados | 5 clinical pearls.
+2026-08-24 14:34:58 | INFO     | anki_generator:233 - 📦 Pacote Anki (.apkg) gerado com sucesso: Medicina_UC16_Aula_6.apkg
+2026-08-24 14:35:01 | SUCCESS  | anki_generator:257 - ⚡ Baralho importado com sucesso para o Anki local via AnkiConnect!
+2026-08-24 14:35:01 | SUCCESS  | orchestrator:98 -  Pipeline concluído em 97.04s! 12 cards gerados.
+2026-08-24 14:42:15 | INFO     | orchestrator:50 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 14:42:25 | ERROR    | multimodal_processor:92 - Erro ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 14:42:26 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 14:42:28 | INFO     | orchestrator:31 - Baralho importado com sucesso no Anki!
+2026-08-24 14:43:26 | INFO     | orchestrator:50 - Iniciando processamento da aula: [UC16] Aula 6
+2026-08-24 14:43:37 | ERROR    | multimodal_processor:92 - Erro ao processar materiais no Gemini: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.6-flash for the latest features and improvements.', 'status': 'NOT_FOUND'}}
+2026-08-24 14:43:39 | INFO     | anki_generator:105 - Baralho Anki gerado com sucesso em: data\output\UC16 - Aula 6.apkg
+2026-08-24 14:43:41 | INFO     | orchestrator:31 - Baralho importado com sucesso no Anki!

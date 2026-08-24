@@ -1,71 +1,88 @@
 import os
+import re
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
 from utils.logger import logger
 
-class DriveSyncManager:
-    """Gerencia a localização de arquivos de aulas a partir do Drive mapeado localmente."""
+
+class DriveFolderScanner:
+    """Varre o Drive local para identificar automaticamente todas as UCs, Aulas e Arquivos."""
 
     def __init__(self, default_drive_path: Optional[str] = None):
-        # Tenta detectar caminhos comuns do Google Drive no Windows
-        possible_paths = [
-            Path("G:/Meu Drive"),
-            Path("G:/My Drive"),
-            Path(os.path.expanduser("~/Google Drive")),
-            Path(os.path.expanduser("~/Meu Drive")),
-            Path("data/raw")
-        ]
-        
-        self.drive_path = Path(default_drive_path) if default_drive_path else None
-        if not self.drive_path or not self.drive_path.exists():
-            for p in possible_paths:
+        self.drive_path = Path(default_drive_path) if default_drive_path else Path("G:/Meu Drive/MedStudy_Aulas")
+        if not self.drive_path.exists():
+            for p in [Path("G:/Meu Drive"), Path("G:/My Drive"), Path("data/raw")]:
                 if p.exists():
                     self.drive_path = p
                     break
-        
-        if not self.drive_path:
-            self.drive_path = Path("data/raw")
-            self.drive_path.mkdir(parents=True, exist_ok=True)
 
-    def find_lesson_files(self, uc_name: str, lesson_title: str) -> Dict[str, Optional[Path]]:
-        """Busca arquivos de slide (.pdf) e áudio (.mp3, .m4a, .wav) correspondentes à aula."""
-        result = {"slide": None, "audio": None}
-        
-        if not self.drive_path.exists():
-            return result
+    def scan_ucs_and_lessons(self, base_path: Optional[Path] = None) -> Dict[str, List[Dict]]:
+        """
+        Lê a pasta raiz e retorna a árvore completa:
+        {
+          "UC16": [
+             {"lesson_folder": "Aula 6", "slide": Path(...), "audio": Path(...), "files": [...]}
+          ]
+        }
+        """
+        root = base_path if base_path else self.drive_path
+        if not root or not root.exists():
+            return {}
 
-        # Procura em subpastas da UC ou na raiz
-        search_dirs = [self.drive_path]
-        uc_dir = self.drive_path / uc_name
-        if uc_dir.exists():
-            search_dirs.insert(0, uc_dir)
+        structure = {}
 
-        # Normaliza termos para busca
-        keywords = [k.lower() for k in lesson_title.split() if len(k) > 3]
+        # 1. Procura pastas de UCs (UC04, UC16, UC29, etc)
+        for uc_dir in sorted(root.iterdir()):
+            if not uc_dir.is_dir() or uc_dir.name.startswith("."):
+                continue
 
-        for s_dir in search_dirs:
-            for file_path in s_dir.rglob("*"):
-                if file_path.is_file():
-                    fname = file_path.name.lower()
-                    
-                    # Checa se é PDF de slide
-                    if file_path.suffix.lower() == ".pdf" and not result["slide"]:
-                        if any(k in fname for k in keywords):
-                            result["slide"] = file_path
+            uc_name = uc_dir.name
+            structure[uc_name] = []
 
-                    # Checa se é arquivo de áudio
-                    if file_path.suffix.lower() in [".mp3", ".m4a", ".wav", ".aac"] and not result["audio"]:
-                        if any(k in fname for k in keywords):
-                            result["audio"] = file_path
+            # 2. Procura pastas de Aulas dentro da UC
+            for item in sorted(uc_dir.iterdir()):
+                if item.is_dir() and not item.name.startswith("."):
+                    lesson_name = item.name
+                    slide_file = None
+                    audio_file = None
+                    all_files = []
 
-        return result
+                    for f in item.rglob("*"):
+                        if f.is_file():
+                            all_files.append(f)
+                            suffix = f.suffix.lower()
+                            if suffix in [".pdf", ".pptx"] and not slide_file:
+                                slide_file = f
+                            elif suffix in [".mp3", ".m4a", ".wav", ".mp4", ".aac", ".ogg"] and not audio_file:
+                                audio_file = f
 
-    def list_files_in_folder(self, folder_path: Path) -> List[Path]:
-        """Lista todos os PDFs e áudios dentro de um diretório selecionado."""
-        p = Path(folder_path)
-        if not p.exists():
-            return []
-        valid_exts = [".pdf", ".mp3", ".m4a", ".wav", ".aac"]
-        return [f for f in p.rglob("*") if f.suffix.lower() in valid_exts]
+                    structure[uc_name].append({
+                        "lesson_title": lesson_name,
+                        "folder_path": item,
+                        "slide": slide_file,
+                        "audio": audio_file,
+                        "total_files": len(all_files),
+                        "file_names": [f.name for f in all_files]
+                    })
+                
+                # Caso os arquivos estejam soltos direto dentro da pasta da UC
+                elif item.is_file():
+                    suffix = item.suffix.lower()
+                    if suffix in [".pdf", ".mp3", ".m4a", ".wav"]:
+                        lesson_title = item.stem
+                        existing = next((l for l in structure[uc_name] if l["lesson_title"] == lesson_title), None)
+                        if not existing:
+                            existing = {
+                                "lesson_title": lesson_title,
+                                "folder_path": uc_dir,
+                                "slide": item if suffix in [".pdf", ".pptx"] else None,
+                                "audio": item if suffix in [".mp3", ".m4a", ".wav"] else None,
+                                "total_files": 1,
+                                "file_names": [item.name]
+                            }
+                            structure[uc_name].append(existing)
 
-drive_sync = DriveSyncManager()
+        return structure
+
+
+drive_sync = DriveFolderScanner()
