@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import List
-import fitz  # PyMuPDF
+import pymupdf as fitz
 from config.settings import settings
 from utils.logger import logger
 
