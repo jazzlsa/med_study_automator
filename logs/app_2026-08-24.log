@@ -53,3 +53,9 @@
 2026-08-24 12:08:33 | SUCCESS  | orchestrator:98 -  Pipeline concluído em 17.91s! 4 cards gerados.
 2026-08-24 12:11:28 | INFO     | orchestrator:27 - Iniciando pipeline: [UC02] Cetoacidose Diabetica
 2026-08-24 12:11:28 | WARNING  | orchestrator:40 - ⏭️ Aula já processada anteriormente em 2026-08-24 15:08:33. Baralho existente: C:\Users\jessi\med_study_automator\outputs\Medicina_UC02_Cetoacidose_Diabetica.apkg. Use --force para reprocessar.
+2026-08-24 12:39:02 | ERROR    | sheets_sync:44 - Erro ao ler CSV da planilha: HTTP Error 400: Bad Request
+2026-08-24 12:39:05 | ERROR    | sheets_sync:44 - Erro ao ler CSV da planilha: HTTP Error 400: Bad Request
+2026-08-24 12:39:10 | ERROR    | sheets_sync:44 - Erro ao ler CSV da planilha: HTTP Error 400: Bad Request
+2026-08-24 13:10:38 | ERROR    | sheets_sync:50 - Erro ao processar abas da planilha: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
+2026-08-24 13:17:02 | ERROR    | sheets_sync:79 - Erro ao ler abas: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
+2026-08-24 14:10:17 | ERROR    | sheets_sync:79 - Erro ao ler abas: `Import openpyxl` failed.  Use pip or conda to install the openpyxl package.
