@@ -1,0 +1,21 @@
+# Ambiente virtual
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Arquivos sensíveis
+.env
+config/credentials.json
+
+# Banco de dados e dados locais
+database/*.db
+data/raw/*
+data/processed/*
+data/temp/*
+data/exports/*
+!data/**/.gitkeep

@@ -1,0 +1,4 @@
+2026-08-24 10:55:26 | INFO     | <string>:1 - Sistema de observabilidade inicializado com sucesso!
+2026-08-24 10:57:27 | INFO     | main:40 - Iniciando processamento: Agressão e Defesa (UC01) - Aula_01
+2026-08-24 10:57:27 | WARNING  | main:43 - 🔍 MODO DRY-RUN ATIVADO: Nenhuma persistência ou envio externo será realizado.
+2026-08-24 10:57:27 | SUCCESS  | main:46 - Pipeline validado para UC01/Aula_01 (Simulação concluída com sucesso).
