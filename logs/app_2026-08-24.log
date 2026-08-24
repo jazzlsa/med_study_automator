@@ -20,3 +20,6 @@
 2026-08-24 11:16:16 | DEBUG    | db:70 - Banco de dados inicializado em: C:\Users\jessi\AppData\Local\Temp\tmpmjp5h5o0.db
 2026-08-24 11:17:02 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
 2026-08-24 11:17:02 | DEBUG    | db:70 - Banco de dados inicializado em: C:\Users\jessi\AppData\Local\Temp\pytest-of-jessi\pytest-0\test_save_and_retrieve_lesson0\test.db
+2026-08-24 11:30:35 | INFO     | gemini_client:87 - Gerando flashcards e resumo para 'Mecanismo da Febre e Citocinas Pirogenicas' com Gemini 2.0 Flash...
+2026-08-24 11:31:32 | INFO     | gemini_client:86 - Gerando flashcards e resumo para 'Mecanismo da Febre e Citocinas Pirogenicas' com Gemini...
+2026-08-24 11:31:52 | SUCCESS  | gemini_client:113 - Processamento concluído: 5 flashcards gerados | 3 clinical pearls.
