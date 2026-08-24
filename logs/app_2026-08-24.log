@@ -23,3 +23,33 @@
 2026-08-24 11:30:35 | INFO     | gemini_client:87 - Gerando flashcards e resumo para 'Mecanismo da Febre e Citocinas Pirogenicas' com Gemini 2.0 Flash...
 2026-08-24 11:31:32 | INFO     | gemini_client:86 - Gerando flashcards e resumo para 'Mecanismo da Febre e Citocinas Pirogenicas' com Gemini...
 2026-08-24 11:31:52 | SUCCESS  | gemini_client:113 - Processamento concluído: 5 flashcards gerados | 3 clinical pearls.
+2026-08-24 11:39:35 | INFO     | anki_generator:162 - 📦 Pacote Anki (.apkg) gerado com sucesso: Medicina_Nefro_Aula_Glomerulopatias.apkg
+2026-08-24 11:50:06 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 11:50:06 | DEBUG    | db:70 - Banco de dados inicializado em: C:\Users\jessi\AppData\Local\Temp\pytest-of-jessi\pytest-1\test_save_and_retrieve_lesson0\test.db
+2026-08-24 11:57:11 | DEBUG    | db:70 - Banco de dados inicializado em: database\lessons.db
+2026-08-24 12:00:58 | INFO     | orchestrator:27 - Iniciando pipeline: [UC02] Cetoacidose Diabetica
+2026-08-24 12:00:58 | INFO     | slide_extractor:31 - Renderizando 1 páginas do slide: slide_teste_cad.pdf
+2026-08-24 12:00:58 | DEBUG    | slide_extractor:41 - 1 imagens de slides salvas em data\temp\slides\Cetoacidose Diabetica
+2026-08-24 12:00:58 | INFO     | gemini_client:43 - Enviando arquivo para API do Gemini: slide_teste_cad.pdf
+2026-08-24 12:01:01 | INFO     | gemini_client:54 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/kmhavreyvbqy)
+2026-08-24 12:01:01 | INFO     | gemini_client:86 - Gerando flashcards e resumo para 'Cetoacidose Diabetica' com Gemini...
+2026-08-24 12:03:20 | INFO     | orchestrator:27 - Iniciando pipeline: [UC02] Cetoacidose Diabetica
+2026-08-24 12:03:20 | INFO     | slide_extractor:31 - Renderizando 1 páginas do slide: slide_teste_cad.pdf
+2026-08-24 12:03:20 | DEBUG    | slide_extractor:41 - 1 imagens de slides salvas em data\temp\slides\Cetoacidose Diabetica
+2026-08-24 12:03:20 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: slide_teste_cad.pdf
+2026-08-24 12:03:24 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/ab7kdpwz4niu)
+2026-08-24 12:03:24 | INFO     | gemini_client:88 - Gerando flashcards e resumo para 'Cetoacidose Diabetica' com Gemini...
+2026-08-24 12:03:35 | SUCCESS  | gemini_client:128 - Processamento concluído: 4 flashcards gerados | 1 clinical pearls.
+2026-08-24 12:03:35 | INFO     | anki_generator:233 - 📦 Pacote Anki (.apkg) gerado com sucesso: Medicina_UC02_Cetoacidose_Diabetica.apkg
+2026-08-24 12:08:15 | INFO     | orchestrator:27 - Iniciando pipeline: [UC02] Cetoacidose Diabetica
+2026-08-24 12:08:15 | INFO     | slide_extractor:31 - Renderizando 1 páginas do slide: slide_teste_cad.pdf
+2026-08-24 12:08:15 | DEBUG    | slide_extractor:41 - 1 imagens de slides salvas em data\temp\slides\Cetoacidose Diabetica
+2026-08-24 12:08:15 | INFO     | gemini_client:44 - Enviando arquivo para API do Gemini: slide_teste_cad.pdf
+2026-08-24 12:08:18 | INFO     | gemini_client:55 - Arquivo pronto: None (URI: https://generativelanguage.googleapis.com/v1beta/files/x0gva4wog67c)
+2026-08-24 12:08:18 | INFO     | gemini_client:88 - Gerando flashcards e resumo para 'Cetoacidose Diabetica' com Gemini...
+2026-08-24 12:08:30 | SUCCESS  | gemini_client:128 - Processamento concluído: 4 flashcards gerados | 2 clinical pearls.
+2026-08-24 12:08:30 | INFO     | anki_generator:233 - 📦 Pacote Anki (.apkg) gerado com sucesso: Medicina_UC02_Cetoacidose_Diabetica.apkg
+2026-08-24 12:08:33 | SUCCESS  | anki_generator:257 - ⚡ Baralho importado com sucesso para o Anki local via AnkiConnect!
+2026-08-24 12:08:33 | SUCCESS  | orchestrator:98 -  Pipeline concluído em 17.91s! 4 cards gerados.
+2026-08-24 12:11:28 | INFO     | orchestrator:27 - Iniciando pipeline: [UC02] Cetoacidose Diabetica
+2026-08-24 12:11:28 | WARNING  | orchestrator:40 - ⏭️ Aula já processada anteriormente em 2026-08-24 15:08:33. Baralho existente: C:\Users\jessi\med_study_automator\outputs\Medicina_UC02_Cetoacidose_Diabetica.apkg. Use --force para reprocessar.

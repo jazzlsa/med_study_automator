@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional, Tuple
 from google import genai
 from google.genai import types
+from google.genai.errors import ServerError, ClientError
 
 from config.settings import settings
 from core.schemas import LessonProcessingResult
@@ -17,11 +18,11 @@ Sua missão é analisar os materiais de aula fornecidos (slides em PDF e/ou grav
 2. Conjunto de flashcards de alta qualidade no formato Anki (Basic e Cloze), focados em raciocínio clínico e memorização espaçada de alto rendimento.
 
 Diretrizes para os Flashcards:
-- Evite perguntas genéricas ou triviais. Foque no mecanismo de ação, apresentações atípicas, diagnóstico diferencial e pegadinhas de prova/prática médica.
+- Evite perguntas genéricas ou triviais. Foque no mecanismo de ação, apresentações atípicas, diagnóstico diferencial e condutas.
 - Para cards do tipo 'Basic', faça perguntas clínicas pontuais ou pequenos vinhetas de casos.
 - Para cards do tipo 'Cloze', utilize a sintaxe de oclusão do Anki: {{c1::termo_chave}}.
 - Associe o 'slide_page_reference' sempre que o conceito for derivado diretamente de um slide visual ou tabela.
-- Use as tags padronizadas: fisiopatologia, semiologia, farmacologia, diagnostico, conduta_terapeutica, anatomia_patologica.
+- Use tags padronizadas em minúsculas (ex: endocrinologia, fisiopatologia, farmacologia, emergencia).
 """
 
 
@@ -60,8 +61,9 @@ class GeminiMedicalClient:
         lesson_title: str,
         slide_path: Optional[Path] = None,
         audio_path: Optional[Path] = None,
+        max_retries: int = 3,
     ) -> Tuple[LessonProcessingResult, int, int]:
-        """Envia slides e áudio para o Gemini e retorna o resultado estruturado."""
+        """Envia slides e áudio para o Gemini com retry automático em caso de sobrecarga."""
         uploaded_files = []
         contents = []
 
@@ -85,16 +87,29 @@ class GeminiMedicalClient:
 
         logger.info(f"Gerando flashcards e resumo para '{lesson_title}' com Gemini...")
 
-        response = self.client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT_MEDICINA,
-                response_mime_type="application/json",
-                response_schema=LessonProcessingResult,
-                temperature=0.2,
-            ),
-        )
+        response = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model="gemini-3.6-flash",
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT_MEDICINA,
+                        response_mime_type="application/json",
+                        response_schema=LessonProcessingResult,
+                        temperature=0.2,
+                    ),
+                )
+                break
+            except (ServerError, ClientError) as err:
+                if attempt == max_retries:
+                    logger.error(f"Tentativa {attempt}/{max_retries} falhou definitivamente: {err}")
+                    raise err
+                wait_sec = attempt * 4
+                logger.warning(
+                    f"Servidor ocupado (tentativa {attempt}/{max_retries}). Aguardando {wait_sec}s para tentar novamente..."
+                )
+                time.sleep(wait_sec)
 
         for f in uploaded_files:
             try:

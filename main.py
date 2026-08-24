@@ -1,173 +1,93 @@
 from pathlib import Path
 import click
-from config.settings import settings
-from database.db import db
-from utils.hasher import compute_content_hash
-from utils.logger import logger
-from utils.metrics import MetricsCollector
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+
+from core.orchestrator import orchestrator
+from database.db import db_manager
+
+console = Console()
 
 
 @click.group()
 def cli():
-    """MedStudyAutomator - Ecossistema Autônomo de Estudos Médicos."""
+    """MedStudy Automator - Processador de Aulas e Flashcards Médicos com IA."""
     pass
 
 
 @cli.command("process")
-@click.option(
-    "--unit",
-    "-u",
-    required=True,
-    help="Identificador da Unidade Curricular (ex: UC01, UC02).",
-)
-@click.option(
-    "--lesson",
-    "-l",
-    required=True,
-    help="Identificador ou título da aula (ex: Aula_01).",
-)
-@click.option(
-    "--slide",
-    "-s",
-    type=click.Path(exists=True),
-    required=False,
-    help="Caminho para o arquivo de slide (PDF).",
-)
-@click.option(
-    "--audio",
-    "-a",
-    type=click.Path(exists=True),
-    required=False,
-    help="Caminho para o arquivo de áudio gravado (MP3/M4A/WAV).",
-)
-@click.option(
-    "--force",
-    "-f",
-    is_flag=True,
-    default=False,
-    help="Força o reprocessamento ignorando o cache de hash MD5.",
-)
-@click.option(
-    "--dry-run",
-    is_flag=True,
-    default=False,
-    help="Executa em modo de simulação sem gravar no banco.",
-)
-def process_lesson(
-    unit: str,
-    lesson: str,
-    slide: str,
-    audio: str,
-    force: bool,
-    dry_run: bool,
-):
-    """Processa slide e áudio de uma aula com idempotência e métricas."""
-    unit_key = unit.upper()
-    if unit_key not in settings.units:
-        logger.error(f"Unidade curricular '{unit}' não configurada no config.yaml.")
-        logger.info(f"Unidades disponíveis: {list(settings.units.keys())}")
-        return
+@click.option("--unit", "-u", required=True, help="Código ou nome da Unidade Curricular (ex: UC01, Nefrologia).")
+@click.option("--lesson", "-l", required=True, help="Título formal da aula (ex: 'Sindrome Nefritica').")
+@click.option("--slide", "-s", type=click.Path(exists=True), default=None, help="Caminho do arquivo de slide (PDF).")
+@click.option("--audio", "-a", type=click.Path(exists=True), default=None, help="Caminho da gravação de áudio (MP3/M4A/WAV).")
+@click.option("--force", is_flag=True, default=False, help="Força reprocessamento ignorando cache de hash.")
+@click.option("--no-sync", is_flag=True, default=False, help="Desativa o envio automático para o Anki via AnkiConnect.")
+def process_command(unit, lesson, slide, audio, force, no_sync):
+    """Processa slides/áudios e gera baralhos Anki completos."""
+    console.print(Panel.fit(f"[bold cyan]Processando Aula:[/bold cyan] [yellow]{lesson}[/yellow] ([green]{unit}[/green])", border_style="cyan"))
 
-    unit_info = settings.units[unit_key]
-    logger.info(f"Iniciando pipeline: {unit_info.name} ({unit_key}) - {lesson}")
+    res = orchestrator.process_lesson(
+        unit_code=unit,
+        lesson_name=lesson,
+        slide_path=Path(slide) if slide else None,
+        audio_path=Path(audio) if audio else None,
+        force_reprocess=force,
+        sync_anki=not no_sync,
+    )
 
-    # Fallback para slide de teste se não informado
-    if not slide:
-        # Se não fornecido slide, usa o próprio config.yaml como mock para teste
-        slide = "config/config.yaml"
-
-    # 1. Cálculo do Hash MD5 combinado para Idempotência
-    content_hash = compute_content_hash(slide, audio)
-    logger.debug(f"Hash do conteúdo gerado: {content_hash}")
-
-    # 2. Verificação de Cache/Processamento Prévio
-    existing_lesson = db.get_lesson_by_hash(content_hash)
-    if existing_lesson and not force:
-        logger.warning(
-            f"⚡ [CACHE HIT] Aula '{lesson}' já foi processada anteriormente em {existing_lesson['updated_at']}."
-        )
-        logger.info("Use a flag --force (-f) se desejar reprocessar do zero.")
-        return
-
-    # 3. Execução com rastreamento de métricas
-    with MetricsCollector(unit_key, lesson) as metrics:
-        if dry_run:
-            logger.warning("🔍 MODO DRY-RUN: Nenhuma gravação persistente será feita.")
-            metrics.add_tokens(prompt=120, completion=45)
-            logger.success(f"Dry-run concluído com sucesso para {unit_key}/{lesson}.")
-            return
-
-        # Simulação de tokens consumidos na geração (será conectado ao Gemini no Módulo 3)
-        metrics.add_tokens(prompt=850, completion=320)
-
-        # 4. Persistência dos dados no SQLite
-        lesson_id = db.save_lesson(
-            unit_code=unit_key,
-            lesson_name=lesson,
-            content_hash=content_hash,
-            slide_path=str(slide),
-            audio_path=str(audio) if audio else "",
-            cards_count=15,
-            status="PROCESSED",
-        )
-        metrics.lesson_id = lesson_id
-
-        logger.success(
-            f"✅ Aula '{lesson}' registrada no SQLite com sucesso (ID: {lesson_id})."
-        )
+    if res["status"] == "success":
+        console.print(f"\n[bold green] Sucesso![/bold green] Baralho salvo em: [underline]{res['apkg_path']}[/underline]")
+        console.print(f"Total de Flashcards: [bold magenta]{res['cards_count']}[/bold magenta] | Tempo: [bold blue]{res['execution_time']:.2f}s[/bold blue]\n")
+    elif res["status"] == "skipped":
+        console.print(f"\n[bold yellow]⏭️ Aula ignorada (já processada).[/bold yellow] Arquivo existente: {res['apkg_path']}")
 
 
-@cli.command("rollback")
-@click.argument("target")
-def rollback_lesson(target: str):
-    """Reverte o processamento de uma aula (ex: rollback UC01/Aula_01)."""
-    if "/" not in target:
-        logger.error("Formato inválido. Use: UCxx/Nome_Da_Aula (ex: UC01/Aula_01)")
-        return
+@cli.command("stats")
+def stats_command():
+    """Exibe estatísticas agregadas de execução, tokens e cards gerados."""
+    stats = db_manager.get_total_stats()
 
-    unit_code, lesson_name = target.split("/", 1)
-    logger.warning(f"Executando Rollback para: {unit_code.upper()} - {lesson_name}")
+    table = Table(title=" Estatísticas de Processamento - MedStudy Automator", border_style="blue")
+    table.add_column("Métrica", style="cyan", justify="left")
+    table.add_column("Valor Total", style="magenta", justify="right")
 
-    deleted = db.delete_lesson(unit_code, lesson_name)
-    if deleted:
-        logger.success(f"Registro de '{lesson_name}' removido do banco com sucesso.")
-    else:
-        logger.warning(f"Nenhum registro encontrado no banco para '{target}'.")
+    table.add_row("Total de Aulas Processadas", str(stats["total_lessons"]))
+    table.add_row("Total de Flashcards Gerados", str(stats["total_cards"]))
+    table.add_row("Tokens de Prompt Consumidos", f"{stats['total_prompt_tokens']:,}")
+    table.add_row("Tokens de Resposta Gerados", f"{stats['total_completion_tokens']:,}")
+    table.add_row("Tempo Total de Execução", f"{stats['total_execution_time']:.2f} segundos")
+
+    console.print(table)
 
 
-@cli.command("status")
-def status():
-    """Exibe o resumo das aulas processadas no banco de dados."""
+@cli.command("list")
+def list_command():
+    """Lista todas as aulas já salvas no banco de dados local."""
     import sqlite3
 
-    conn = sqlite3.connect(settings.database.path)
+    conn = sqlite3.connect(db_manager.db_path)
     cursor = conn.cursor()
-    cursor.execute(
-        "SELECT id, unit_code, lesson_name, cards_count, status, created_at FROM lessons ORDER BY id DESC"
-    )
+    cursor.execute("SELECT id, unit_code, lesson_name, cards_count, created_at, apkg_path FROM lessons ORDER BY id DESC")
     rows = cursor.fetchall()
     conn.close()
 
     if not rows:
-        click.echo("\nNenhuma aula processada ainda.\n")
+        console.print("[yellow]Nenhuma aula registrada até o momento.[/yellow]")
         return
 
-    click.echo("\n📊 Status do Banco de Aulas:")
-    click.echo("-" * 75)
-    click.echo(f"{'ID':<4} | {'UC':<6} | {'AULA':<20} | {'CARDS':<6} | {'STATUS':<10} | {'DATA'}")
-    click.echo("-" * 75)
+    table = Table(title=" Aulas Registradas", border_style="green")
+    table.add_column("ID", style="dim", width=4)
+    table.add_column("Unidade", style="cyan")
+    table.add_column("Aula", style="bold white")
+    table.add_column("Cards", justify="right", style="magenta")
+    table.add_column("Data", style="blue")
+    table.add_column("Arquivo APKG", style="dim")
+
     for r in rows:
-        click.echo(f"{r[0]:<4} | {r[1]:<6} | {r[2]:<20} | {r[3]:<6} | {r[4]:<10} | {r[5]}")
-    click.echo("-" * 75 + "\n")
+        table.add_row(str(r[0]), str(r[1]), str(r[2]), str(r[3]), str(r[4])[:19], Path(str(r[5])).name if r[5] else "-")
 
-
-@cli.command("list-units")
-def list_units():
-    """Lista todas as UCs configuradas no ecossistema."""
-    click.echo(f"\n📚 Unidades Curriculares ({settings.app.name} v{settings.app.version}):\n")
-    for code, info in settings.units.items():
-        click.echo(f"  • [{code}] {info.name} -> Deck: {info.deck_name}")
-    click.echo("")
+    console.print(table)
 
 
 if __name__ == "__main__":

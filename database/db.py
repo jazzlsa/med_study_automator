@@ -1,17 +1,21 @@
 import sqlite3
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Optional, Dict, Any
 from config.settings import settings
 from utils.logger import logger
 
 
 class DatabaseManager:
-    """Gerenciador central de persistência SQLite com suporte a rastreamento e métricas."""
+    """Gerencia a persistência em SQLite, controle de idempotência e métricas."""
 
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or settings.database.path
-        # Garante que o diretório do banco exista
+        if db_path:
+            self.db_path = Path(db_path)
+        elif hasattr(settings.storage, "db_path"):
+            self.db_path = settings.storage.db_path
+        else:
+            self.db_path = Path("data/med_study.db")
+
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -21,72 +25,41 @@ class DatabaseManager:
         return conn
 
     def _init_db(self):
-        """Inicializa as tabelas de aulas e métricas de execução se não existirem."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-
-            # Tabela de Aulas Processadas (Idempotência e Rastreamento)
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS lessons (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     unit_code TEXT NOT NULL,
                     lesson_name TEXT NOT NULL,
-                    slide_path TEXT,
-                    audio_path TEXT,
                     content_hash TEXT UNIQUE NOT NULL,
                     cards_count INTEGER DEFAULT 0,
                     apkg_path TEXT,
-                    drive_apkg_link TEXT,
-                    notebooklm_id TEXT,
-                    notebooklm_link TEXT,
-                    status TEXT DEFAULT 'PROCESSED',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
                 """
             )
-
-            # Tabela de Métricas de Execução (Observabilidade)
             cursor.execute(
                 """
                 CREATE TABLE IF NOT EXISTS execution_metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     lesson_id INTEGER,
-                    unit_code TEXT NOT NULL,
-                    lesson_name TEXT NOT NULL,
                     prompt_tokens INTEGER DEFAULT 0,
                     completion_tokens INTEGER DEFAULT 0,
-                    total_tokens INTEGER DEFAULT 0,
-                    duration_seconds REAL DEFAULT 0.0,
-                    success INTEGER DEFAULT 1,
-                    error_message TEXT,
+                    execution_time_sec REAL DEFAULT 0.0,
+                    cost_usd REAL DEFAULT 0.0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY(lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
+                    FOREIGN KEY (lesson_id) REFERENCES lessons (id) ON DELETE CASCADE
                 );
                 """
             )
             conn.commit()
-            logger.debug(f"Banco de dados inicializado em: {self.db_path}")
 
     def get_lesson_by_hash(self, content_hash: str) -> Optional[Dict[str, Any]]:
-        """Busca aula pelo hash do conteúdo para idempotência."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM lessons WHERE content_hash = ?", (content_hash,)
-            )
-            row = cursor.fetchone()
-            return dict(row) if row else None
-
-    def get_lesson(self, unit_code: str, lesson_name: str) -> Optional[Dict[str, Any]]:
-        """Busca aula por UC e nome da aula."""
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM lessons WHERE unit_code = ? AND lesson_name = ?",
-                (unit_code.upper(), lesson_name),
-            )
+            cursor.execute("SELECT * FROM lessons WHERE content_hash = ?", (content_hash,))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -95,103 +68,79 @@ class DatabaseManager:
         unit_code: str,
         lesson_name: str,
         content_hash: str,
-        slide_path: str = "",
-        audio_path: str = "",
-        cards_count: int = 0,
-        apkg_path: str = "",
-        drive_apkg_link: str = "",
-        notebooklm_id: str = "",
-        notebooklm_link: str = "",
-        status: str = "PROCESSED",
+        cards_count: int,
+        apkg_path: Optional[str] = None,
     ) -> int:
-        """Insere ou atualiza os dados de uma aula processada."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO lessons (
-                    unit_code, lesson_name, slide_path, audio_path,
-                    content_hash, cards_count, apkg_path, drive_apkg_link,
-                    notebooklm_id, notebooklm_link, status, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                INSERT INTO lessons (unit_code, lesson_name, content_hash, cards_count, apkg_path)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(content_hash) DO UPDATE SET
-                    unit_code=excluded.unit_code,
-                    lesson_name=excluded.lesson_name,
-                    slide_path=excluded.slide_path,
-                    audio_path=excluded.audio_path,
-                    cards_count=excluded.cards_count,
-                    apkg_path=excluded.apkg_path,
-                    drive_apkg_link=excluded.drive_apkg_link,
-                    notebooklm_id=excluded.notebooklm_id,
-                    notebooklm_link=excluded.notebooklm_link,
-                    status=excluded.status,
-                    updated_at=CURRENT_TIMESTAMP;
+                    cards_count = excluded.cards_count,
+                    apkg_path = excluded.apkg_path;
                 """,
-                (
-                    unit_code.upper(),
-                    lesson_name,
-                    slide_path,
-                    audio_path,
-                    content_hash,
-                    cards_count,
-                    apkg_path,
-                    drive_apkg_link,
-                    notebooklm_id,
-                    notebooklm_link,
-                    status,
-                ),
+                (unit_code, lesson_name, content_hash, cards_count, apkg_path),
             )
             conn.commit()
             return cursor.lastrowid
 
-    def record_metrics(
+    def log_metrics(
         self,
-        unit_code: str,
-        lesson_name: str,
-        prompt_tokens: int = 0,
-        completion_tokens: int = 0,
-        duration_seconds: float = 0.0,
-        success: bool = True,
-        error_message: Optional[str] = None,
-        lesson_id: Optional[int] = None,
+        lesson_id: int,
+        prompt_tokens: int,
+        completion_tokens: int,
+        execution_time_sec: float,
+        cost_usd: float = 0.0,
     ):
-        """Registra métricas de observabilidade de uma execução."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
-            total_tokens = prompt_tokens + completion_tokens
             cursor.execute(
                 """
-                INSERT INTO execution_metrics (
-                    lesson_id, unit_code, lesson_name, prompt_tokens,
-                    completion_tokens, total_tokens, duration_seconds,
-                    success, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO execution_metrics (lesson_id, prompt_tokens, completion_tokens, execution_time_sec, cost_usd)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (
-                    lesson_id,
-                    unit_code.upper(),
-                    lesson_name,
-                    prompt_tokens,
-                    completion_tokens,
-                    total_tokens,
-                    duration_seconds,
-                    1 if success else 0,
-                    error_message,
-                ),
+                (lesson_id, prompt_tokens, completion_tokens, execution_time_sec, cost_usd),
             )
             conn.commit()
 
     def delete_lesson(self, unit_code: str, lesson_name: str) -> bool:
-        """Remove registro de aula para suporte ao Rollback."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 "DELETE FROM lessons WHERE unit_code = ? AND lesson_name = ?",
-                (unit_code.upper(), lesson_name),
+                (unit_code, lesson_name),
             )
             conn.commit()
             return cursor.rowcount > 0
 
+    def get_total_stats(self) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*), COALESCE(SUM(cards_count), 0) FROM lessons")
+            total_lessons, total_cards = cursor.fetchone()
 
-# Instância global reutilizável
-db = DatabaseManager()
+            cursor.execute(
+                """
+                SELECT 
+                    COALESCE(SUM(prompt_tokens), 0),
+                    COALESCE(SUM(completion_tokens), 0),
+                    COALESCE(SUM(execution_time_sec), 0.0),
+                    COALESCE(SUM(cost_usd), 0.0)
+                FROM execution_metrics
+                """
+            )
+            p_tok, c_tok, exec_time, cost = cursor.fetchone()
+
+            return {
+                "total_lessons": total_lessons,
+                "total_cards": total_cards,
+                "total_prompt_tokens": p_tok,
+                "total_completion_tokens": c_tok,
+                "total_execution_time": exec_time,
+                "total_cost_usd": cost,
+            }
+
+
+db_manager = DatabaseManager()
