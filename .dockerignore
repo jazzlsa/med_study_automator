@@ -1,0 +1,20 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.git/
+.gitignore
+
+# Segredos e dados locais - nunca vão pra dentro da imagem. Em runtime, chegam
+# via Secret Manager (--set-secrets) e volumes do Cloud Run, não embutidos aqui.
+.env
+config/credentials.json
+data/
+logs/
+outputs/
+
+# Scripts/artefatos só de desenvolvimento local
+scratch_run_*.py
+run_auto_pipeline.bat
+setup.bat

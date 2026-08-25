@@ -14,8 +14,15 @@ config/credentials.json
 
 # Banco de dados e dados locais
 database/*.db
+data/*.db
 data/raw/*
 data/processed/*
 data/temp/*
 data/exports/*
 !data/**/.gitkeep
+
+# Logs - operacionais, não devem ir pro histórico público
+logs/
+
+# Scripts de teste manual/scratch - não fazem parte do pipeline
+scratch_*.py

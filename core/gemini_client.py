@@ -1,3 +1,7 @@
+# OBSOLETO: código legado da era Anki (gera flashcards no schema LessonProcessingResult).
+# Não é importado nem usado no pipeline atual (core/orchestrator.py usa
+# core/multimodal_processor.py). Mantido apenas para referência histórica.
+
 import json
 import time
 from pathlib import Path

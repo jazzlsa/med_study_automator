@@ -3,6 +3,7 @@ from pathlib import Path
 from core.orchestrator import orchestrator
 from database.db import db_manager
 from core.drive_sync import drive_sync
+from core.sheets_sync import AVAILABLE_UCS
 
 st.set_page_config(
     page_title="MedStudy Automator - NotebookLM",
@@ -16,14 +17,9 @@ st.markdown("Automatize a criação de workspaces no NotebookLM, transcrições 
 # Sidebar para seleção de unidades e aulas
 st.sidebar.header("📁 Seleção de Aulas")
 
-# Unidades curriculares de medicina
-units = {
-    "UC16": "UC16 - Aparelho Respiratório / Infecções",
-    "UC17": "UC17 - Aparelho Cardiovascular",
-    "UC18": "UC18 - Aparelho Locomotor"
-}
-
-selected_uc = st.sidebar.selectbox("Selecione a Unidade Curricular:", list(units.keys()), format_func=lambda x: units[x])
+# Lista de UCs centralizada em core/sheets_sync.py (mesmas abas reais da planilha
+# de controle), pra não divergir de UC pra UC entre a UI e o script de automação.
+selected_uc = st.sidebar.selectbox("Selecione a Unidade Curricular:", AVAILABLE_UCS)
 
 # Busca aulas disponíveis no diretório do Drive local
 lessons = drive_sync.scan_local_lessons(selected_uc)
@@ -86,6 +82,11 @@ st.subheader("📊 Histórico de Aulas Processadas")
 completed_lessons = db_manager.get_completed_lessons(selected_uc)
 if completed_lessons:
     for item in completed_lessons:
-        st.markdown(f"- ✅ **{item['lesson_name']}** (Notebook ID: `{item.get('notebook_id', 'N/A')}`)")
+        status = item.get("status", "success")
+        icon = "✅" if status == "success" else "⚠️"
+        line = f"- {icon} **{item['lesson_name']}** (Notebook ID: `{item.get('notebook_id', 'N/A')}`)"
+        if status != "success" and item.get("details"):
+            line += f" — _{item['details']}_"
+        st.markdown(line)
 else:
     st.info("Nenhuma aula processada para esta unidade ainda.")

@@ -1,12 +1,15 @@
 import io
 import urllib.parse
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Sequence
 import pandas as pd
 import requests
 
+from config.settings import settings
 from utils.logger import logger
 
-SPREADSHEET_ID = "1K0ubSbGSSzmuVIHgI2l9d5TYDvjcHkTTJLmVO25WabM"
+# GOOGLE_SPREADSHEET_ID (config/settings.py, vindo do .env) é a fonte de verdade;
+# o ID abaixo é só um fallback pra não quebrar se alguém rodar sem configurar o .env.
+SPREADSHEET_ID = settings.secrets.GOOGLE_SPREADSHEET_ID or "1K0ubSbGSSzmuVIHgI2l9d5TYDvjcHkTTJLmVO25WabM"
 
 # Lista oficial de abas mapeadas da sua planilha
 AVAILABLE_UCS = [
@@ -24,6 +27,22 @@ AVAILABLE_UCS = [
     "UC21 - TURMA B",
     "UC24",
 ]
+
+# Palavras-chave usadas para achar as colunas de aula/link/autor no cabeçalho de
+# cada aba. Reaproveitadas por core/sheets_client.py para ficar consistente com a
+# leitura aqui.
+AULA_KEYWORDS = ["aula", "tema", "título"]
+LINK_KEYWORDS = ["link", "notebook", "nlm"]
+AUTOR_KEYWORDS = ["feito por", "autor"]
+
+
+def find_column_by_keywords(headers: Sequence[str], keywords: List[str]) -> Optional[str]:
+    """Retorna o primeiro cabeçalho que contém alguma das keywords (case-insensitive),
+    ou None se nenhum bater."""
+    return next(
+        (h for h in headers if any(k in str(h).lower() for k in keywords)),
+        None,
+    )
 
 
 class SheetsSyncManager:
@@ -56,30 +75,11 @@ class SheetsSyncManager:
       df.columns = [str(c).strip() for c in df.columns]
 
       # Localiza colunas
-      aula_col = next(
-          (
-              c
-              for c in df.columns
-              if any(k in c.lower() for k in ["aula", "tema", "título"])
-          ),
-          df.columns[0] if len(df.columns) > 0 else None,
+      aula_col = find_column_by_keywords(df.columns, AULA_KEYWORDS) or (
+          df.columns[0] if len(df.columns) > 0 else None
       )
-      link_col = next(
-          (
-              c
-              for c in df.columns
-              if any(k in c.lower() for k in ["link", "notebook", "nlm"])
-          ),
-          None,
-      )
-      autor_col = next(
-          (
-              c
-              for c in df.columns
-              if any(k in c.lower() for k in ["feito por", "autor"])
-          ),
-          None,
-      )
+      link_col = find_column_by_keywords(df.columns, LINK_KEYWORDS)
+      autor_col = find_column_by_keywords(df.columns, AUTOR_KEYWORDS)
 
       lessons = []
       if aula_col:

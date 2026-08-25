@@ -24,6 +24,17 @@ google-auth-oauthlib>=1.2.0
 google-api-python-client>=2.120.0
 gdown>=5.1.0
 
+# Cloud Run Jobs: persistência do SQLite entre execuções via GCS (só é usada de
+# fato quando a env var GCS_DB_BUCKET está configurada - ver database/db.py)
+google-cloud-storage>=2.14.0
+
+# NotebookLM (CLI notebooklm-py). No Windows local, instale com o extra [browser]
+# também (pip install "notebooklm-py[browser,headless]") pra poder rodar
+# `notebooklm login` interativo. O Dockerfile do Cloud Run instala só
+# [headless,impersonate] - sem Playwright/Chromium, que não é necessário no dia a
+# dia (só no bootstrap do master-token, feito no Windows, nunca no container).
+notebooklm-py>=0.8.1
+
 # Testes
 pytest>=8.0.0
 pytest-asyncio>=0.23.0
