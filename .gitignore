@@ -26,3 +26,4 @@ logs/
 
 # Scripts de teste manual/scratch - não fazem parte do pipeline
 scratch_*.py
+.aider*

@@ -215,4 +215,38 @@ class Orchestrator:
             logger.error(f"Erro crítico no orquestrador da aula {lesson_name}: {e}")
             return False
 
+    def generate_more_flashcards(
+        self, unit_code: str, lesson_name: str, lesson_folder: Union[str, Path], quantity: int = 10
+    ) -> dict:
+        """Gera `quantity` flashcards novos pra uma aula já processada (sob demanda,
+        ex.: botão na UI do Streamlit) e regera o .apkg com o baralho COMPLETO
+        (antigos + novos) - o Anki mescla pelo mesmo guid de sempre, então os
+        cards antigos não duplicam, só os novos são acrescentados de fato.
+
+        Diferente de process_lesson, não mexe no NotebookLM nem na planilha -
+        só flashcards. Retorna {"success", "new_count", "total_count", "path", "error"}."""
+        gemini_result = multimodal_processor.generate_more_flashcards(
+            Path(lesson_folder), unit_code, lesson_name, quantity=quantity
+        )
+        if not gemini_result["success"]:
+            return {"success": False, "new_count": 0, "total_count": 0, "path": None, "error": gemini_result["error"]}
+
+        apkg_path = drive_sync.resolve_apkg_output_path(unit_code, _safe_filename(lesson_name))
+        apkg_result = build_flashcards_apkg(gemini_result["all_flashcards"], unit_code, lesson_name, apkg_path)
+        if not apkg_result["success"]:
+            return {"success": False, "new_count": len(gemini_result["new_flashcards"]), "total_count": len(gemini_result["all_flashcards"]), "path": None, "error": apkg_result["error"]}
+
+        publish_result = drive_sync.publish_flashcards_apkg(apkg_path, unit_code, lesson_name)
+        if not publish_result["success"]:
+            return {"success": False, "new_count": len(gemini_result["new_flashcards"]), "total_count": len(gemini_result["all_flashcards"]), "path": None, "error": publish_result["error"]}
+
+        return {
+            "success": True,
+            "new_count": len(gemini_result["new_flashcards"]),
+            "total_count": len(gemini_result["all_flashcards"]),
+            "path": publish_result.get("url") or apkg_result["path"],
+            "error": None,
+        }
+
+
 orchestrator = Orchestrator()

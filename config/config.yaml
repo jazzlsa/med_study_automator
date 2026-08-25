@@ -4,6 +4,28 @@ app:
   log_level: "INFO"
   anki_root_deck: "Medicina"
 
+# Tudo que muda de semestre pra semestre (planilha nova, pastas novas do Drive,
+# lista de UCs cursadas) fica centralizado aqui - editável pela aba "⚙️
+# Configurações" do app.py, sem precisar mexer em código nenhum.
+semester:
+  spreadsheet_id: "1K0ubSbGSSzmuVIHgI2l9d5TYDvjcHkTTJLmVO25WabM"
+  drive_lessons_folder_name: "MedStudy_Aulas"
+  drive_flashcards_folder_name: "MedStudy_Flashcards"
+  available_ucs:
+    - "UC29"
+    - "UC17"
+    - "UC04"
+    - "UC05"
+    - "UC11"
+    - "UC16"
+    - "UC08"
+    - "UC06"
+    - "UC09"
+    - "UC10"
+    - "UC21 - TURMA A"
+    - "UC21 - TURMA B"
+    - "UC24"
+
 database:
   path: "database/lessons.db"
 

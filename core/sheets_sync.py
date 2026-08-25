@@ -7,12 +7,19 @@ import requests
 from config.settings import settings
 from utils.logger import logger
 
-# GOOGLE_SPREADSHEET_ID (config/settings.py, vindo do .env) é a fonte de verdade;
-# o ID abaixo é só um fallback pra não quebrar se alguém rodar sem configurar o .env.
-SPREADSHEET_ID = settings.secrets.GOOGLE_SPREADSHEET_ID or "1K0ubSbGSSzmuVIHgI2l9d5TYDvjcHkTTJLmVO25WabM"
+# config/config.yaml (bloco "semester") é a fonte de verdade pra tudo que muda de
+# semestre pra semestre - editável pela aba "⚙️ Configurações" do app.py, sem
+# precisar mexer em código. settings.secrets.GOOGLE_SPREADSHEET_ID (.env) e o ID
+# fixo abaixo continuam como fallback, só pra não quebrar quem ainda não migrou
+# pra usar o config.yaml.
+SPREADSHEET_ID = (
+    settings.semester.spreadsheet_id
+    or settings.secrets.GOOGLE_SPREADSHEET_ID
+    or "1K0ubSbGSSzmuVIHgI2l9d5TYDvjcHkTTJLmVO25WabM"
+)
 
-# Lista oficial de abas mapeadas da sua planilha
-AVAILABLE_UCS = [
+# Lista de abas mapeadas da planilha do semestre atual (config/config.yaml).
+AVAILABLE_UCS = settings.semester.available_ucs or [
     "UC29",
     "UC17",
     "UC04",

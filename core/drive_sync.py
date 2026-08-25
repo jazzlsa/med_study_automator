@@ -15,8 +15,10 @@ class DriveFolderScanner:
     Jéssica, sem exigir nenhuma credencial nova)."""
 
     def __init__(self, base_path: Optional[str] = None):
-        # Caminho padrão baseado no seu ambiente (G:\Meu Drive\MedStudy_Aulas)
-        self.base_path = Path(base_path) if base_path else Path(r"G:\Meu Drive\MedStudy_Aulas")
+        # Nome da pasta vem de config/config.yaml (bloco "semester") - editável pela
+        # aba "⚙️ Configurações" do app.py, sem precisar mexer em código quando o
+        # semestre trocar de pasta no Drive.
+        self.base_path = Path(base_path) if base_path else Path(r"G:\Meu Drive") / settings.semester.drive_lessons_folder_name
 
     @staticmethod
     def _find_direct_materials(folder: Path) -> Dict[str, Optional[str]]:
@@ -108,15 +110,12 @@ class DriveFolderScanner:
 
         return lessons
 
-    # Pasta no Drive Desktop onde os .apkg gerados são salvos, organizados por UC -
-    # independente da estrutura Estudos/Medicina/<UC>/Flashcards/ do OneDrive.
-    FLASHCARDS_DRIVE_ROOT = Path(r"G:\Meu Drive\MedStudy_Flashcards")
-
     def resolve_apkg_output_path(self, unit_code: str, lesson_name_safe: str) -> Path:
         """Backend local: escreve direto dentro da pasta sincronizada do Drive -
         o addon do Anki (que varre essa mesma pasta) já enxerga o arquivo assim
         que ele é salvo, sem precisar de nenhum passo extra de "publicação"."""
-        return self.FLASHCARDS_DRIVE_ROOT / unit_code / f"{lesson_name_safe}.apkg"
+        flashcards_root = Path(r"G:\Meu Drive") / settings.semester.drive_flashcards_folder_name
+        return flashcards_root / unit_code / f"{lesson_name_safe}.apkg"
 
     def publish_flashcards_apkg(self, local_apkg_path: Path, unit_code: str, lesson_name: str) -> Dict[str, Any]:
         """Backend local: o .apkg já foi escrito pelo chamador direto dentro da
@@ -138,10 +137,12 @@ class DriveApiScanner:
     """
 
     def __init__(self):
-        from core.drive_api import drive_api_client, LESSONS_ROOT_NAME, FLASHCARDS_ROOT_NAME
+        from core.drive_api import drive_api_client
         self._client = drive_api_client
-        self._lessons_root_name = LESSONS_ROOT_NAME
-        self._flashcards_root_name = FLASHCARDS_ROOT_NAME
+        # Nomes das pastas vêm de config/config.yaml (bloco "semester") - o mesmo
+        # valor usado pelo backend local, editável sem mexer em código.
+        self._lessons_root_name = settings.semester.drive_lessons_folder_name
+        self._flashcards_root_name = settings.semester.drive_flashcards_folder_name
         self._lessons_root_id_cache: Optional[str] = None
         self._flashcards_root_id_cache: Optional[str] = None
         self._download_root = Path(settings.storage.temp_dir) / "drive_cache"

@@ -30,9 +30,6 @@ except ImportError:
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
-LESSONS_ROOT_NAME = "MedStudy_Aulas"
-FLASHCARDS_ROOT_NAME = "MedStudy_Flashcards"
-
 
 class DriveApiClient:
     """Fina camada sobre a Drive API v3: localizar pastas por nome, listar

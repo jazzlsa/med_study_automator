@@ -315,6 +315,114 @@ class MultimodalProcessor:
             card["video"] = topic_to_video[topic] or ""
 
     # ------------------------------------------------------------------
+    # Gerar flashcards ADICIONAIS pra uma aula já processada (sob demanda)
+    # ------------------------------------------------------------------
+
+    def generate_more_flashcards(
+        self, lesson_folder: Path, unit_code: str, lesson_name: str, quantity: int = 10
+    ) -> Dict[str, Any]:
+        """Gera `quantity` flashcards NOVOS pra uma aula já processada antes, sem
+        reenviar slide/áudio pro Gemini de novo - reaproveita a transcrição salva
+        em `transcricao_aula.txt` (bem mais barato que reprocessar o áudio).
+
+        Evita repetir pergunta já feita passando os enunciados/assertivas já
+        existentes (lidos de `flashcards.json`, salvo por analyze_lesson_materials)
+        como contexto de "não repita isso". Acrescenta os novos ao mesmo
+        `flashcards.json` (não sobrescreve os antigos).
+
+        Retorna {"success", "new_flashcards", "all_flashcards", "error"}."""
+        transcript_path = lesson_folder / "transcricao_aula.txt"
+        if not transcript_path.exists():
+            return {
+                "success": False, "new_flashcards": [], "all_flashcards": [],
+                "error": (
+                    "transcrição não encontrada nesta pasta - essa aula precisa ter sido "
+                    "processada pelo pipeline normal (com áudio) antes de gerar mais flashcards"
+                ),
+            }
+        transcript = transcript_path.read_text(encoding="utf-8")
+
+        flashcards_json_path = lesson_folder / "flashcards.json"
+        existing_flashcards: List[Dict[str, Any]] = []
+        if flashcards_json_path.exists():
+            try:
+                existing_flashcards = json.loads(flashcards_json_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(f"flashcards.json existente em {lesson_folder} não pôde ser lido ({e}) - seguindo sem contexto de duplicidade.")
+
+        existing_questions = [
+            (c.get("enunciado") or c.get("assertiva") or "").strip()
+            for c in existing_flashcards
+            if (c.get("enunciado") or c.get("assertiva"))
+        ]
+        existing_block = "\n".join(f"- {q}" for q in existing_questions) or "(nenhum flashcard existe ainda para esta aula)"
+
+        prompt = f"""
+        Você é um médico especialista e professor sênior.
+        Gere EXATAMENTE {quantity} flashcards NOVOS de alto rendimento para a aula
+        '{lesson_name}' da unidade '{unit_code}', com base na transcrição fornecida
+        abaixo (fisiopatologia, critérios diagnósticos, farmacologia, conduta -
+        evite perguntas triviais/genéricas).
+
+        Os flashcards a seguir JÁ EXISTEM para esta aula - NÃO repita as mesmas
+        perguntas nem variações óbvias delas; cubra ângulos/tópicos diferentes:
+        {existing_block}
+
+        Cada item deve ter "tipo": "mc" (múltipla escolha) ou "tipo": "vf"
+        (verdadeiro ou falso), com os campos:
+
+        Para "tipo": "mc":
+          - "topico_busca": tópico curto (3-8 palavras) pra buscar um vídeo do
+            YouTube relacionado a ESSE card especificamente.
+          - "enunciado": a pergunta/vinheta clínica.
+          - "resposta_correta": a alternativa certa.
+          - "opcoes_erradas": lista com 2 a 7 alternativas erradas plausíveis.
+          - "pegadinha": SE alguma alternativa errada for particularmente
+            tentadora, explique em 1-2 frases por que ela está errada; senão ""
+          - "explicacao": comece EXATAMENTE com "💡 GABARITO COMENTADO: [TÓPICO]"
+            (troque [TÓPICO] pelo tema real), depois explique o raciocínio.
+          - "fonte": indique que veio da transcrição da aula (ex.: "Transcrição
+            da aula, {lesson_name}").
+
+        Para "tipo": "vf":
+          - "topico_busca": igual acima.
+          - "contexto_enunciado": frase curta de contexto (pode ser "").
+          - "assertiva": a afirmação a ser julgada.
+          - "gabarito": EXATAMENTE "Verdadeiro" ou "Falso".
+          - "pegadinha": igual acima.
+          - "explicacao": igual acima, começando com "💡 GABARITO COMENTADO: [TÓPICO]".
+          - "fonte": igual acima.
+
+        Retorne EXATAMENTE um JSON válido no formato {{"flashcards": [...]}} e nada mais.
+
+        Transcrição da aula:
+        ---
+        {transcript}
+        ---
+        """
+
+        try:
+            response = self._generate_with_retry([prompt])
+            result_json = json.loads(response.text, strict=False)
+            new_flashcards = result_json.get("flashcards") or []
+
+            if not new_flashcards:
+                return {"success": False, "new_flashcards": [], "all_flashcards": existing_flashcards, "error": "Gemini não retornou nenhum flashcard novo"}
+
+            self._enrich_flashcards_with_videos(new_flashcards)
+
+            all_flashcards = existing_flashcards + new_flashcards
+            flashcards_json_path.write_text(
+                json.dumps(all_flashcards, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
+            return {"success": True, "new_flashcards": new_flashcards, "all_flashcards": all_flashcards, "error": None}
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar flashcards adicionais para '{lesson_name}': {e}")
+            return {"success": False, "new_flashcards": [], "all_flashcards": existing_flashcards, "error": str(e)}
+
+    # ------------------------------------------------------------------
     # Ponto de entrada público
     # ------------------------------------------------------------------
 
@@ -437,6 +545,17 @@ class MultimodalProcessor:
             # dos flashcards, um por tópico único - nunca aceita um ID que o Gemini só
             # "lembrou" de memória, só o que veio de um resultado de busca de verdade.
             self._enrich_flashcards_with_videos(flashcards)
+
+            # Salva os flashcards gerados como JSON na pasta da aula (mesmo lugar da
+            # transcrição) - é o que permite "gerar mais flashcards" depois (Streamlit)
+            # saber quais já existem, pra pedir cards novos ao Gemini sem repetir.
+            if lesson_dir and lesson_dir.exists() and flashcards:
+                try:
+                    (lesson_dir / "flashcards.json").write_text(
+                        json.dumps(flashcards, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                except Exception as e:
+                    logger.warning(f"Não consegui salvar flashcards.json em {lesson_dir}: {e}")
 
             return {
                 "success": True,
