@@ -10,7 +10,14 @@ próximas. No final, imprime um resumo com quantas aulas novas foram encontradas
 quantas deram certo e quantas falharam (com o motivo de cada falha).
 
 Uso manual: venv\\Scripts\\python.exe auto_pipeline.py
+
+Pra testar/reprocessar só algumas UCs sem esperar a varredura completa das 13
+(útil em teste manual - as execuções agendadas continuam sempre olhando todas,
+pra não perder aula nova em qualquer UC), define PIPELINE_ONLY_UCS com uma
+lista separada por vírgula antes de rodar, ex.:
+  set PIPELINE_ONLY_UCS=UC16,UC17 && venv\\Scripts\\python.exe auto_pipeline.py
 """
+import os
 import sys
 
 from core.sheets_sync import AVAILABLE_UCS
@@ -47,7 +54,19 @@ def run() -> int:
     succeeded: list = []
     failed: list = []  # list[(nome, motivo)]
 
-    for unit_code in AVAILABLE_UCS:
+    # PIPELINE_ONLY_UCS (opcional, só pra teste manual) restringe a varredura a
+    # uma lista específica de UCs, em vez de todas - útil pra não esperar a
+    # checagem das outras 11 UCs sem nada pendente. Sem essa env var (caso normal
+    # das execuções agendadas), continua olhando AVAILABLE_UCS inteira.
+    only_ucs_raw = os.environ.get("PIPELINE_ONLY_UCS", "").strip()
+    units_to_scan = (
+        [uc.strip() for uc in only_ucs_raw.split(",") if uc.strip()]
+        if only_ucs_raw else AVAILABLE_UCS
+    )
+    if only_ucs_raw:
+        logger.info(f"PIPELINE_ONLY_UCS configurado - restringindo a varredura a: {units_to_scan}")
+
+    for unit_code in units_to_scan:
         lessons = drive_sync.scan_local_lessons(unit_code)
         if not lessons:
             continue

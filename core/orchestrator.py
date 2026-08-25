@@ -1,3 +1,4 @@
+import os
 import re
 from pathlib import Path
 from typing import List, Union, Optional, Any
@@ -87,9 +88,25 @@ class Orchestrator:
 
             notebook_id = create_result["notebook_id"]
 
+            # URL de fallback (caso o compartilhamento público falhe) - domínio
+            # correto confirmado na prática (notebook.google.com, SEM "lm" -
+            # "notebooklm.google.com" dava "Notebook não encontrado" pra quem não
+            # era dono, bug real visto em produção).
+            notebook_url = f"https://notebook.google.com/notebook/{notebook_id}" if notebook_id else None
+
             if not create_result["success"]:
                 logger.error(f"Falha ao criar o NotebookLM '{notebook_title}'; pulando fontes e Estúdio.")
                 step_failures.append(f"criação do NotebookLM ({create_result['error']})")
+            else:
+                # Notebook nasce privado por padrão - sem isso a turma não consegue
+                # abrir o link da planilha sem pedir acesso manualmente. Idempotente
+                # (chamar de novo num notebook reaproveitado que já está público não
+                # tem efeito colateral), por isso roda sempre que create_result deu certo.
+                # Usa o share_url retornado (link de verdade que funciona pra quem não
+                # é dono) em vez do fallback montado à mão, quando disponível.
+                sharing_result = notebooklm_client.set_public_sharing(notebook_id)
+                if sharing_result.get("share_url"):
+                    notebook_url = sharing_result["share_url"]
 
             # 2. Extrai transcrição e resumo via Gemini ANTES de adicionar as fontes ao
             # NotebookLM, pra poder incluir a transcrição gerada como uma fonte extra
@@ -142,13 +159,31 @@ class Orchestrator:
                 logger.warning("Gemini não retornou nenhum flashcard para esta aula - .apkg não foi gerado.")
 
             if create_result["success"]:
-                # 3. Injeta TODAS as fontes no NotebookLM de uma vez (slide + áudio +
-                # transcrição, quando disponível). Fontes que já estão indexadas num
-                # notebook reaproveitado são puladas (existing_source_titles), pra
-                # não duplicar.
+                # 3. Injeta as fontes no NotebookLM de uma vez (slide + transcrição
+                # sempre; áudio bruto só no backend local). Fontes que já estão
+                # indexadas num notebook reaproveitado são puladas
+                # (existing_source_titles), pra não duplicar.
+                #
+                # Rodando na nuvem (STORAGE_BACKEND=cloud), o NotebookLM falha em
+                # processar áudio vindo de IP de datacenter (bug real confirmado em
+                # produção: mesmo arquivo, 0/N sucessos na nuvem vs sucesso imediato
+                # local, em vários testes) - provável bloqueio/degradação por
+                # anti-abuso, não corrigível do nosso lado. Em vez de tentar (e
+                # sempre falhar) o áudio bruto, usa só a transcrição do Gemini como
+                # fonte de texto - cobre o mesmo conteúdo informacional, e os
+                # artefatos do Estúdio (inclusive "Áudio") são sintetizados a partir
+                # do conteúdo das fontes, não dependem da fonte já ser áudio.
+                is_cloud = os.environ.get("STORAGE_BACKEND", "local").strip().lower() == "cloud"
                 extra_sources = [transcript_path] if transcript_path else []
+                audio_sources = [] if is_cloud else audios
+                if is_cloud and audios:
+                    logger.info(
+                        f"STORAGE_BACKEND=cloud - pulando upload do áudio bruto pro NotebookLM "
+                        f"({[a.name for a in audios]}), usando só a transcrição do Gemini como fonte "
+                        f"(áudio na nuvem tem falha conhecida de processamento no NotebookLM)."
+                    )
                 sources_result = notebooklm_client.add_sources_to_notebook(
-                    notebook_id, slides + audios + extra_sources, skip_titles=existing_source_titles
+                    notebook_id, slides + audio_sources + extra_sources, skip_titles=existing_source_titles
                 )
                 if not sources_result["success"]:
                     failed_files = [s["file"] for s in sources_result["sources"] if not s["success"]]
@@ -158,31 +193,74 @@ class Orchestrator:
                 # 3.5. Espera TODAS as fontes do notebook (inclusive fontes fantasma de
                 # tentativas anteriores, se houver) saírem de "preparing/processando"
                 # antes de gerar o Estúdio - senão a geração usa só as fontes que já
-                # estavam prontas naquele instante, ignorando as que ainda faltavam.
+                # estavam prontas naquele instante, ignorando as que ainda faltavam
+                # (bug real observado em produção: áudio ainda "preparing" e o Estúdio
+                # sendo gerado mesmo assim, com resultado baseado em fonte incompleta).
+                #
+                # Se o timeout estourar com fontes ainda pendentes, NÃO apaga nem gera o
+                # Estúdio nesta execução - áudio grande pode legitimamente demorar mais
+                # que o timeout (não é sempre uma fonte "fantasma" de verdade), e apagar
+                # uma fonte que só precisava de mais tempo destrói trabalho de indexação
+                # que já estava em andamento. Em vez disso, marca como partial_failure e
+                # deixa pro retry automático (próxima execução reaproveita o mesmo
+                # notebook e só reconfere o status - se tiver terminado de indexar até lá,
+                # gera o Estúdio completo; se ainda não, espera mais uma rodada).
                 logger.info("Aguardando todas as fontes do NotebookLM ficarem prontas antes de gerar o Estúdio...")
                 ready_result = notebooklm_client.wait_for_sources_ready(notebook_id)
-                if not ready_result["success"] and ready_result["pending"]:
-                    deleted = notebooklm_client.cleanup_stuck_sources(notebook_id, ready_result["pending"])
+
+                # Bug real observado em produção: quando o áudio é pulado na nuvem (acima) E
+                # a transcrição do Gemini também falha por qualquer motivo, sobra só o slide
+                # como fonte - "todas as fontes prontas" dá certo (não tem nada pendente/com
+                # erro, só faltou ADICIONAR a transcrição), e o Estúdio era gerado mesmo assim,
+                # baseado só no slide, perdendo todo o conteúdo do áudio silenciosamente. Só
+                # bloqueia num notebook realmente novo (sem artefato nenhum ainda) - não impede
+                # o retry de aproveitar um Estúdio já gerado numa tentativa anterior boa.
+                missing_audio_content = is_cloud and bool(audios) and not transcript_path and not existing_artifact_types
+
+                if ready_result["success"] and missing_audio_content:
+                    logger.error(
+                        "Áudio pulado na nuvem e a transcrição do Gemini não ficou disponível "
+                        "(falhou nesta execução) - PULANDO a geração do Estúdio, pra não gerar "
+                        "perdendo todo o conteúdo do áudio. O retry automático tenta de novo."
+                    )
+                    step_failures.append("transcrição do Gemini indisponível (áudio pulado na nuvem) - Estúdio não gerado")
+                elif ready_result["success"]:
+                    # 4. Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards,
+                    # teste, slides, vídeo, infográfico, tabela de dados, mapa mental) UMA
+                    # ÚNICA VEZ, depois que todas as fontes já foram adicionadas. Artefatos
+                    # já disparados num notebook reaproveitado são pulados, pra não duplicar.
+                    studio_result = notebooklm_client.generate_studio_artifacts(
+                        notebook_id, skip_types=existing_artifact_types
+                    )
+                    if not studio_result["success"]:
+                        failed_artifacts = [k for k, r in studio_result["artifacts"].items() if not r["success"]]
+                        logger.error(f"Falha ao gerar um ou mais artefatos do Estúdio: {failed_artifacts}")
+                        step_failures.append(f"artefatos do Estúdio ({', '.join(failed_artifacts)})")
+                elif ready_result.get("errored"):
+                    # Fonte com ERRO terminal de processamento no NotebookLM (ex.: áudio que o
+                    # backend nunca conseguiu processar) - diferente de "ainda processando",
+                    # isso não se resolve esperando mais nem numa próxima tentativa com a MESMA
+                    # fonte. Fica registrado como falha real - requer atenção manual (reenviar o
+                    # arquivo, checar se está corrompido, etc.), não é auto-recuperável.
+                    errored_titles = sorted({s.get("title") for s in ready_result["errored"] if s.get("title")})
+                    logger.error(
+                        f"{len(ready_result['errored'])} fonte(s) com ERRO terminal de processamento "
+                        f"({errored_titles}) - PULANDO a geração do Estúdio, pra não gerar com fonte faltando. "
+                        f"Requer atenção manual (não se resolve sozinho num retry)."
+                    )
+                    step_failures.append(f"fonte(s) com erro de processamento no NotebookLM ({', '.join(errored_titles)})")
+                elif ready_result["pending"]:
                     stuck_titles = sorted({s.get("title") for s in ready_result["pending"] if s.get("title")})
                     logger.warning(
-                        f"{deleted}/{len(ready_result['pending'])} fonte(s) fantasma removidas do notebook "
-                        f"(nunca terminaram de processar): {stuck_titles}"
+                        f"{len(ready_result['pending'])} fonte(s) ainda não terminaram de indexar após a espera "
+                        f"({stuck_titles}) - PULANDO a geração do Estúdio nesta execução, pra não gerar com fonte "
+                        f"incompleta. O retry automático reconfere o status na próxima rodada."
                     )
-                    step_failures.append(f"fontes presas em processamento ({', '.join(stuck_titles)})")
+                    step_failures.append(f"fontes ainda processando, Estúdio não gerado nesta rodada ({', '.join(stuck_titles)})")
+                else:
+                    logger.error(f"Falha ao checar status das fontes do NotebookLM: {ready_result.get('error')} - pulando geração do Estúdio.")
+                    step_failures.append(f"checagem de status das fontes ({ready_result.get('error')})")
 
-                # 4. Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards,
-                # teste, slides, vídeo, infográfico, tabela de dados, mapa mental) UMA
-                # ÚNICA VEZ, depois que todas as fontes já foram adicionadas. Artefatos
-                # já disparados num notebook reaproveitado são pulados, pra não duplicar.
-                studio_result = notebooklm_client.generate_studio_artifacts(
-                    notebook_id, skip_types=existing_artifact_types
-                )
-                if not studio_result["success"]:
-                    failed_artifacts = [k for k, r in studio_result["artifacts"].items() if not r["success"]]
-                    logger.error(f"Falha ao gerar um ou mais artefatos do Estúdio: {failed_artifacts}")
-                    step_failures.append(f"artefatos do Estúdio ({', '.join(failed_artifacts)})")
-
-                notebook_url = f"https://notebooklm.google.com/notebook/{notebook_id}"
                 logger.info(f"NotebookLM pronto! Link: {notebook_url}")
 
                 # 5. Registra o link na Planilha do Google Sheets (com o tema real do

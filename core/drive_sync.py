@@ -21,19 +21,21 @@ class DriveFolderScanner:
         self.base_path = Path(base_path) if base_path else Path(r"G:\Meu Drive") / settings.semester.drive_lessons_folder_name
 
     @staticmethod
-    def _find_direct_materials(folder: Path) -> Dict[str, Optional[str]]:
-        """Procura o primeiro slide (.pdf) e o primeiro áudio (.mp3/.wav/.m4a) direto
-        dentro de `folder` (não recursivo)."""
-        slide_path = None
-        audio_path = None
+    def _find_direct_materials(folder: Path) -> Dict[str, List[str]]:
+        """Procura TODOS os slides (.pdf) e TODOS os áudios (.mp3/.wav/.m4a) direto
+        dentro de `folder` (não recursivo) - uma aula pode ter o áudio dividido em
+        várias partes (ex.: "Parte 1.m4a", "Parte 2.m4a"); pegar só o primeiro
+        deixaria o resto de fora silenciosamente."""
+        slides: List[str] = []
+        audios: List[str] = []
         for file_path in sorted(folder.iterdir()):
             if file_path.is_file():
                 ext = file_path.suffix.lower()
-                if ext in SLIDE_EXTS and not slide_path:
-                    slide_path = str(file_path)
-                elif ext in AUDIO_EXTS and not audio_path:
-                    audio_path = str(file_path)
-        return {"slide": slide_path, "audio": audio_path}
+                if ext in SLIDE_EXTS:
+                    slides.append(str(file_path))
+                elif ext in AUDIO_EXTS:
+                    audios.append(str(file_path))
+        return {"slide": slides, "audio": audios}
 
     def _scan_lesson_folder(self, lesson_folder: Path) -> List[Dict[str, Any]]:
         """Retorna uma ou mais aulas encontradas dentro de `lesson_folder`.
@@ -81,8 +83,8 @@ class DriveFolderScanner:
         # lidar com isso: auto_pipeline.py pula aulas sem material detectado).
         return [{
             "lesson_title": lesson_folder.name,
-            "slide": None,
-            "audio": None,
+            "slide": [],
+            "audio": [],
             "folder_path": str(lesson_folder),
         }]
 
@@ -161,18 +163,20 @@ class DriveApiScanner:
             )
         return self._flashcards_root_id_cache
 
-    def _find_direct_materials(self, folder_id: str, download_dir: Path) -> Dict[str, Optional[str]]:
-        slide_path = None
-        audio_path = None
+    def _find_direct_materials(self, folder_id: str, download_dir: Path) -> Dict[str, List[str]]:
+        """Baixa TODOS os slides e TODOS os áudios da pasta (não só o primeiro) -
+        mesmo motivo do backend local: uma aula pode ter o áudio em várias partes."""
+        slides: List[str] = []
+        audios: List[str] = []
         for entry in sorted(self._client.list_children(folder_id), key=lambda f: f["name"]):
             if entry["mimeType"] == "application/vnd.google-apps.folder":
                 continue
             ext = Path(entry["name"]).suffix.lower()
-            if ext in SLIDE_EXTS and not slide_path:
-                slide_path = str(self._client.download_file(entry["id"], download_dir / entry["name"]))
-            elif ext in AUDIO_EXTS and not audio_path:
-                audio_path = str(self._client.download_file(entry["id"], download_dir / entry["name"]))
-        return {"slide": slide_path, "audio": audio_path}
+            if ext in SLIDE_EXTS:
+                slides.append(str(self._client.download_file(entry["id"], download_dir / entry["name"])))
+            elif ext in AUDIO_EXTS:
+                audios.append(str(self._client.download_file(entry["id"], download_dir / entry["name"])))
+        return {"slide": slides, "audio": audios}
 
     def _list_subfolders(self, folder_id: str) -> List[Dict[str, Any]]:
         return [
@@ -208,8 +212,8 @@ class DriveApiScanner:
 
         return [{
             "lesson_title": lesson_folder["name"],
-            "slide": None,
-            "audio": None,
+            "slide": [],
+            "audio": [],
             "folder_path": lesson_folder["id"],
         }]
 
@@ -258,6 +262,10 @@ class DriveApiScanner:
                      "error": f"pasta '{self._flashcards_root_name}' não encontrada/compartilhada no Drive"}
 
         uc_folder_id = self._client.find_or_create_folder(flashcards_root_id, unit_code)
+        if not uc_folder_id:
+            return {"success": False, "path": str(local_apkg_path), "url": None,
+                     "error": f"não consegui achar/criar a subpasta '{unit_code}' em '{self._flashcards_root_name}' no Drive"}
+
         result = self._client.upload_file(local_apkg_path, uc_folder_id, filename=local_apkg_path.name)
         return {
             "success": result["success"],

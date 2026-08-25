@@ -9,6 +9,24 @@
 # (ver runbook de deploy).
 FROM python:3.11-slim
 
+# Sem isso, o stdout do Python fica bufferizado em bloco (não bufferiza linha a
+# linha como faz num terminal de verdade) - se o processo travar/crashar antes do
+# buffer encher, a saída nunca chega ao Cloud Logging, mesmo que o Python já
+# tenha logado alguma coisa internamente antes de morrer. Um dos jeitos mais
+# comuns de um container "crashar sem deixar rastro nenhum".
+ENV PYTHONUNBUFFERED=1
+
+# python:3.11-slim não vem com locale UTF-8 configurado (fica em "C"/ASCII por
+# padrão) - isso quebra qualquer texto com acento (ç, ã, é...) em algum ponto
+# da stack de rede/arquivo que dependa do locale do sistema (bug real visto em
+# produção: 'ascii' codec can't encode character 'ç' - derrubava a extração via
+# Gemini pra qualquer aula com título ou nome de arquivo acentuado, ou seja,
+# quase todas). PYTHONUTF8 força o Python em si a tratar tudo como UTF-8,
+# independente do locale do sistema.
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONUTF8=1
+
 # ffmpeg: usado por core/multimodal_processor.py pra recomprimir áudio antes do
 # upload pro Gemini (reduz payload = menor chance de 503 em arquivos pesados).
 # Opcional em tempo de execução (o código já cai de volta pro áudio original se

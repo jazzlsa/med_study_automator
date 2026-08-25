@@ -173,20 +173,31 @@ class SheetsClient:
             logger.error(f"Falha ao ler o cabeçalho da aba '{worksheet_title}': {e}")
             return False
 
-        aula_col_name = find_column_by_keywords(headers, AULA_KEYWORDS) or (headers[0] if headers else None)
-        link_col_name = find_column_by_keywords(headers, LINK_KEYWORDS)
-        autor_col_name = find_column_by_keywords(headers, AUTOR_KEYWORDS)
+        # A coluna de aula é achada por keyword no cabeçalho (ex.: "Aula", "Tema") -
+        # ou, se nenhuma bater, cai pra coluna A por posição (bug real corrigido:
+        # abas como 'UC17' têm a coluna A funcionando normalmente como coluna de
+        # aula, mas com o CABEÇALHO em branco - antes disso era tratado por engano
+        # como "coluna não encontrada" só porque o texto do cabeçalho era "").
+        # aula_col_idx é sempre um índice (1-based), nunca reobtido via
+        # headers.index(texto) - isso evitava um segundo bug: '' aparece mais de
+        # uma vez em headers (ex.: colunas A e D ambas em branco), então
+        # headers.index('') sempre acharia a primeira ocorrência (correto aqui só
+        # por coincidência de posição, não por design).
+        aula_col_name = find_column_by_keywords(headers, AULA_KEYWORDS)
+        aula_col_idx = headers.index(aula_col_name) + 1 if aula_col_name else (1 if headers else None)
 
-        if not aula_col_name or not link_col_name:
+        link_col_name = find_column_by_keywords(headers, LINK_KEYWORDS)
+        link_col_idx = headers.index(link_col_name) + 1 if link_col_name else None
+
+        if not aula_col_idx or not link_col_idx:
             logger.warning(
                 f"Não encontrei as colunas de aula/link no cabeçalho da aba '{worksheet_title}': {headers}"
             )
             return False
 
-        aula_col_idx = headers.index(aula_col_name) + 1
-        link_col_idx = headers.index(link_col_name) + 1
         # "Feito por" é opcional - nem toda aba tem essa coluna, e sua ausência não
         # deve impedir o registro do link.
+        autor_col_name = find_column_by_keywords(headers, AUTOR_KEYWORDS)
         autor_col_idx = headers.index(autor_col_name) + 1 if autor_col_name else None
 
         try:

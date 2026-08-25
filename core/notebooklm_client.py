@@ -36,10 +36,14 @@ SOURCE_ADD_RETRY_WAIT_SECONDS = 5
 # de adicionar) antes de disparar a geração do Estúdio - pega fontes reaproveitadas
 # de tentativas anteriores e fontes "fantasma" deixadas por um 'source add' que
 # falhou (a CLI documenta que essas ficam presas em 'preparing' pra sempre, como
-# evidência do erro). Generoso de propósito: melhor esperar mais do que gerar com
-# fonte incompleta.
-SOURCES_READY_TIMEOUT_SECONDS = 300
-SOURCES_READY_POLL_INTERVAL_SECONDS = 10
+# evidência do erro). Generoso de propósito: áudio de aula real pode legitimamente
+# demorar bem mais que alguns minutos pra indexar (bug real observado em produção
+# com o timeout antigo de 300s: a espera estourava com o áudio ainda "preparing" e
+# o Estúdio era gerado mesmo assim, sem essa fonte) - melhor esperar mais do que
+# gerar com fonte incompleta. Se estourar mesmo assim, orchestrator.py NÃO apaga a
+# fonte nem gera o Estúdio nesta rodada - deixa pro retry automático reconferir.
+SOURCES_READY_TIMEOUT_SECONDS = 900
+SOURCES_READY_POLL_INTERVAL_SECONDS = 15
 PENDING_SOURCE_STATUSES = ("preparing", "processing", "unknown")
 
 # Teto de tamanho pro texto de erro logado/guardado (stderr da CLI pode, em bugs
@@ -192,22 +196,49 @@ class NotebookLMClient:
         do notebook - pegando também fontes "fantasma" deixadas por um 'source add'
         que falhou antes de retornar um ID (ficam presas em 'preparing' pra sempre).
 
-        Retorna {"success": True} quando tudo chegou num estado terminal (ready/error),
-        ou {"success": False, "pending": [...]} se ainda sobrou algo pendente depois do
-        timeout - quem chama decide o que fazer (ex.: limpar as fontes presas)."""
+        Retorna {"success": True} só quando TODAS as fontes chegaram em 'ready' de
+        verdade. Se alguma terminou em 'error' (bug real observado em produção: uma
+        fonte de áudio entrou em erro terminal no backend do NotebookLM - "failed to
+        process... never resolved" - e o código antigo tratava isso como "pronta",
+        deixando o Estúdio ser gerado sem essa fonte), retorna {"success": False,
+        "errored": [...]}. Se sobrou algo em 'preparing'/'processing' depois do
+        timeout, retorna {"success": False, "pending": [...]} - quem chama decide o
+        que fazer (nunca deve gerar o Estúdio em nenhum dos dois casos de False).
+
+        Importante: o NotebookLM NUNCA substitui uma fonte com erro - cada tentativa
+        de 'source add' (inclusive um retry manual bem-sucedido) cria uma linha NOVA
+        na lista, deixando a tentativa antiga com status 'error' pra trás pra sempre
+        (bug real observado: um áudio corrigido manualmente continuava bloqueando o
+        Estúdio por causa de 3 tentativas antigas com erro do MESMO título). Por
+        isso só conta como erro de verdade um TÍTULO que não tem nenhuma versão
+        'ready' - se existe pelo menos uma versão pronta com aquele nome, as
+        tentativas antigas com erro daquele mesmo título são ignoradas."""
         deadline = time.time() + timeout
         while True:
             result = self._run_cli(["source", "list", "-n", notebook_id], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
             if not result["success"]:
                 logger.warning(f"Não consegui checar o status das fontes do notebook {notebook_id}: {result['error']}")
-                return {"success": False, "pending": [], "error": result["error"]}
+                return {"success": False, "pending": [], "errored": [], "error": result["error"]}
 
             sources = (result["data"] or {}).get("sources", [])
             pending = [s for s in sources if s.get("status") in PENDING_SOURCE_STATUSES]
+            ready_titles = {s["title"] for s in sources if s.get("status") == "ready" and s.get("title")}
+            errored = [
+                s for s in sources
+                if s.get("status") == "error" and s.get("title") not in ready_titles
+            ]
 
             if not pending:
-                logger.info(f"Todas as fontes do notebook {notebook_id} estão prontas (ready/error).")
-                return {"success": True, "pending": [], "error": None}
+                if errored:
+                    errored_desc = [f"{s.get('title')} ({s.get('status')})" for s in errored]
+                    logger.error(
+                        f"{len(errored)} fonte(s) do notebook {notebook_id} terminaram em ERRO de "
+                        f"processamento (não é 'ainda processando', é falha terminal do NotebookLM): "
+                        f"{errored_desc} - NÃO vou gerar o Estúdio com fonte faltando."
+                    )
+                    return {"success": False, "pending": [], "errored": errored, "error": f"{len(errored)} fonte(s) com erro de processamento ({', '.join(errored_desc)})"}
+                logger.info(f"Todas as fontes do notebook {notebook_id} estão prontas (ready).")
+                return {"success": True, "pending": [], "errored": [], "error": None}
 
             if time.time() >= deadline:
                 pending_desc = [f"{s.get('title')} ({s.get('status')})" for s in pending]
@@ -216,7 +247,7 @@ class NotebookLMClient:
                     f"processar após {timeout}s - provavelmente sobras de um 'source add' que falhou "
                     f"antes (ficam presas em 'preparing' pra sempre, por design da CLI): {pending_desc}"
                 )
-                return {"success": False, "pending": pending, "error": f"{len(pending)} fonte(s) presas em processamento"}
+                return {"success": False, "pending": pending, "errored": [], "error": f"{len(pending)} fonte(s) presas em processamento"}
 
             logger.info(
                 f"Aguardando {len(pending)} fonte(s) do notebook {notebook_id} terminarem de processar "
@@ -225,10 +256,13 @@ class NotebookLMClient:
             time.sleep(SOURCES_READY_POLL_INTERVAL_SECONDS)
 
     def cleanup_stuck_sources(self, notebook_id: str, pending_sources: List[Dict[str, Any]]) -> int:
-        """Apaga fontes ainda presas (preparing/processing/unknown) depois que
-        wait_for_sources_ready esgotou o timeout - são sobras "fantasma" de um
-        'source add' que falhou e nunca vão terminar de processar sozinhas.
-        Retorna quantas foram apagadas de fato."""
+        """Apaga fontes ainda presas (preparing/processing/unknown). NÃO é mais
+        chamado automaticamente pelo orchestrator (era chamado a cada timeout de
+        wait_for_sources_ready, mas isso apagava fontes que só precisavam de mais
+        tempo pra indexar - ex.: áudio de aula real, não só "fantasmas" de um
+        'source add' que falhou de verdade). Fica disponível pra limpeza manual,
+        quando alguém confirmar de propósito que uma fonte específica está
+        realmente presa pra sempre (não só lenta). Retorna quantas foram apagadas."""
         deleted = 0
         for s in pending_sources:
             source_id = s.get("id")
@@ -242,6 +276,21 @@ class NotebookLMClient:
             else:
                 logger.warning(f"Não consegui remover a fonte fantasma '{title}' (id={source_id}): {result['error']}")
         return deleted
+
+    def delete_sources_by_title(self, notebook_id: str, title: str) -> int:
+        """Apaga TODAS as fontes com esse título exato (qualquer status), pra poder
+        subir uma versão nova no lugar - usado quando o CONTEÚDO de uma fonte já
+        existente precisa ser trocado (ex.: transcrição regerada com um prompt
+        corrigido), caso em que add_sources_to_notebook pularia por já achar o
+        título "presente" (bug real: ela só verifica presença por nome, não
+        conteúdo). Retorna quantas foram apagadas."""
+        result = self._run_cli(["source", "list", "-n", notebook_id], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
+        if not result["success"]:
+            logger.warning(f"Não consegui listar as fontes do notebook {notebook_id} pra apagar '{title}': {result['error']}")
+            return 0
+        sources = (result["data"] or {}).get("sources", [])
+        matches = [s for s in sources if s.get("title") == title]
+        return self.cleanup_stuck_sources(notebook_id, matches)
 
     def delete_all_artifacts(self, notebook_id: str) -> int:
         """Apaga TODOS os artefatos do Estúdio de um notebook (ex.: pra regenerar do
@@ -299,6 +348,26 @@ class NotebookLMClient:
             return {"success": False, "notebook_id": None, "error": "resposta da CLI sem notebook_id"}
 
         return {"success": True, "notebook_id": notebook_id, "error": None}
+
+    def set_public_sharing(self, notebook_id: str) -> Dict[str, Any]:
+        """Ativa o compartilhamento público por link ('qualquer um com o link pode
+        ver', somente leitura) - sem isso, um notebook novo nasce privado por
+        padrão e a turma não consegue abrir o link da planilha sem pedir acesso
+        manualmente. Chamado uma vez, logo após criar o notebook.
+
+        Retorna {"success", "share_url", "error"} - o `share_url` retornado aqui
+        (domínio notebook.google.com) é o link de verdade que funciona pra quem
+        não é dono do notebook. Usar esse em vez de montar a URL manualmente:
+        bug real encontrado em produção onde o domínio "notebooklm.google.com"
+        (usado antes pra montar o link salvo na planilha) dava "Notebook não
+        encontrado" pra quem abria o link, mesmo o notebook existindo e sendo
+        público - o domínio certo é sem o "lm"."""
+        result = self._run_cli(["share", "public", "-n", notebook_id, "--enable"], timeout=CREATE_TIMEOUT_SECONDS)
+        if not result["success"]:
+            logger.warning(f"Não consegui ativar o compartilhamento público do notebook {notebook_id}: {result['error']}")
+            return {"success": False, "share_url": None, "error": result["error"]}
+        share_url = (result["data"] or {}).get("share_url")
+        return {"success": True, "share_url": share_url, "error": None}
 
     def add_source_to_notebook(self, notebook_id: str, file_path: Path) -> Dict[str, Any]:
         """Adiciona um único arquivo local como fonte e aguarda o NotebookLM terminar

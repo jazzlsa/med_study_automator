@@ -80,9 +80,31 @@ class MultimodalProcessor:
         return file_ref
 
     def _upload_and_wait(self, path: Path, uploaded_files: list) -> Any:
-        f_ref = self.client.files.upload(file=str(path))
-        uploaded_files.append(f_ref)
-        return self._wait_for_active(f_ref)
+        """Sobe `path` pro Gemini. Se o nome do arquivo tiver caractere não-ASCII
+        (comum: nome de aula com acento, ex.: "Herança"), sobe uma CÓPIA com nome
+        sanitizado em vez do arquivo original - bug real visto em produção: o SDK
+        do Gemini quebra com 'ascii codec can't encode character' ao montar a
+        requisição de upload com um nome de arquivo acentuado (não é bug de
+        locale/UTF-8 do sistema - persiste mesmo com o container em UTF-8 e o
+        nome já normalizado; é o próprio SDK/HTTP tentando tratar o nome como
+        ASCII). Preserva a extensão, só troca os caracteres do nome em si."""
+        upload_path = path
+        temp_ascii_copy: Optional[Path] = None
+        try:
+            path.name.encode("ascii")
+        except UnicodeEncodeError:
+            temp_ascii_copy = Path(tempfile.gettempdir()) / f"gemini_upload_{abs(hash(str(path)))}{path.suffix}"
+            shutil.copyfile(path, temp_ascii_copy)
+            upload_path = temp_ascii_copy
+            logger.debug(f"Nome de arquivo com acento ('{path.name}') - subindo cópia sanitizada pro Gemini: {temp_ascii_copy.name}")
+
+        try:
+            f_ref = self.client.files.upload(file=str(upload_path))
+            uploaded_files.append(f_ref)
+            return self._wait_for_active(f_ref)
+        finally:
+            if temp_ascii_copy is not None:
+                temp_ascii_copy.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
     # Compressão opcional de áudio (reduz payload antes do upload)
@@ -455,7 +477,13 @@ class MultimodalProcessor:
                (geralmente na primeira página/capa do PDF). Copie o texto literal do título -
                NÃO invente, NÃO resuma, NÃO parafraseie. Se não conseguir identificar um
                título claro no slide, retorne uma string vazia "".
-            2. "transcript": Uma transcrição detalhada, fluida e estruturada de todo o conteúdo falado no áudio em formato de texto corrido acadêmico.
+            2. "transcript": Transcrição LITERAL (ipsis litteris) de TUDO que é dito no áudio,
+               do início ao fim - não é um resumo nem uma reescrita em texto corrido acadêmico.
+               Mantenha a fala tal como foi dita (incluindo repetições, hesitações e o jeito
+               coloquial de falar do professor), na ORDEM em que aparece no áudio, sem pular
+               nem condensar trechos. A ÚNICA correção permitida é a de erros de transcrição
+               (ex.: um termo médico que o reconhecimento de voz claramente entendeu errado por
+               soar parecido) - nunca reescreva, resuma, reorganize ou "limpe" o estilo da fala.
             3. "summary": Um resumo clínico estruturado, focado em fisiopatologia, diagnóstico, conduta e pérolas clínicas.
             4. "flashcards": uma lista de flashcards de alto rendimento cobrindo os pontos-chave
                da aula (fisiopatologia, critérios diagnósticos, farmacologia, conduta - evite
@@ -488,7 +516,7 @@ class MultimodalProcessor:
             Retorne EXATAMENTE um JSON válido no seguinte formato e nada mais:
             {{
               "tema": "Título exato copiado do slide...",
-              "transcript": "Transcrição detalhada do áudio...",
+              "transcript": "Transcrição literal do áudio, do início ao fim...",
               "summary": "Resumo clínico detalhado...",
               "flashcards": [
                 {{"tipo": "mc", "topico_busca": "...", "enunciado": "...", "resposta_correta": "...", "opcoes_erradas": ["...", "..."], "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "..."}},

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 # Carrega variáveis do arquivo .env
@@ -56,9 +56,33 @@ class EnvSecrets(BaseSettings):
     GOOGLE_SPREADSHEET_ID: Optional[str] = None
     WHATSAPP_API_TOKEN: Optional[str] = None
 
+    # Upload do .apkg de flashcards pro Drive via OAuth da conta pessoal (não a
+    # service account, que não tem cota própria em "Meu Drive") - ver
+    # core/drive_api.py. Gerados uma vez por scripts/setup_drive_oauth.py.
+    GOOGLE_DRIVE_OAUTH_CLIENT_ID: Optional[str] = None
+    GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "ignore"
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_whitespace(cls, v):
+        """Remove espaço/quebra de linha nas pontas de todo valor string.
+
+        Bug real visto em produção: um secret do Google Secret Manager (usado
+        via --set-secrets como env var no Cloud Run) foi criado com "\\r\\r\\n"
+        grudado no final do valor (efeito colateral de como o valor foi
+        gerado/repassado no PowerShell) - o client_id do OAuth ficava então
+        "...googleusercontent.com\\r\\r\\n", que o servidor OAuth do Google
+        rejeita como 'invalid_client: The OAuth client was not found' (não bate
+        com nenhum client_id real). Passava despercebido em teste manual porque
+        `.strip()` era aplicado ali sem querer antes de comparar. Isso garante
+        que nenhum EnvSecrets carregue lixo de espaço/quebra de linha, venha de
+        onde vier (arquivo .env local ou secret montado como env var)."""
+        return v.strip() if isinstance(v, str) else v
 
 
 class AppSettings(BaseModel):

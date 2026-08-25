@@ -88,19 +88,23 @@ with tab_pipeline:
             st.write(f"**Unidade:** {selected_uc}")
             st.write(f"**Aula:** {lesson_selection['lesson_title']}")
 
-            slide_file = lesson_selection.get("slide")
-            audio_file = lesson_selection.get("audio")
+            # "slide"/"audio" vêm como lista agora (uma aula pode ter o áudio
+            # dividido em várias partes) - filtra só os que existem de verdade.
+            slide_files = [f for f in (lesson_selection.get("slide") or []) if f and Path(f).exists()]
+            audio_files = [f for f in (lesson_selection.get("audio") or []) if f and Path(f).exists()]
 
             st.markdown("---")
             st.markdown("#### 📂 Arquivos Detectados:")
-            if slide_file and Path(slide_file).exists():
-                st.success(f"Slide encontrado: `{Path(slide_file).name}`")
+            if slide_files:
+                for f in slide_files:
+                    st.success(f"Slide encontrado: `{Path(f).name}`")
             else:
                 st.warning("Nenhum slide (.pdf) encontrado na pasta desta aula.")
 
-            if audio_file and Path(audio_file).exists():
-                st.success(f"Áudio encontrado: `{Path(audio_file).name}`")
-                st.audio(str(audio_file))
+            if audio_files:
+                for f in audio_files:
+                    st.success(f"Áudio encontrado: `{Path(f).name}`")
+                    st.audio(f)
             else:
                 st.info("Nenhum áudio (.mp3) encontrado na pasta desta aula (opcional).")
 
