@@ -11,11 +11,22 @@ __pycache__/
 # Arquivos sensíveis
 .env
 config/credentials.json
+config/oauth_client_secret.json
+config/drive_oauth_secrets.json
 
 # Banco de dados e dados locais
 database/*.db
+data/*.db
 data/raw/*
 data/processed/*
 data/temp/*
 data/exports/*
 !data/**/.gitkeep
+
+# Logs - operacionais, não devem ir pro histórico público
+logs/
+log_*.json
+
+# Scripts de teste manual/scratch - não fazem parte do pipeline
+scratch_*.py
+.aider*

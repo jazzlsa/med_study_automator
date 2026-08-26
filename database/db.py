@@ -1,15 +1,73 @@
+import os
 import sqlite3
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from utils.logger import logger
 
 class DatabaseManager:
-    """Gerencia o banco de dados SQLite local para controle de aulas processadas."""
+    """Gerencia o banco de dados SQLite local para controle de aulas processadas.
+
+    Cloud Run Jobs não tem disco persistente entre execuções - cada rodada começa
+    com um filesystem novo. Se a env var GCS_DB_BUCKET estiver configurada, este
+    banco é baixado de um bucket do Cloud Storage na inicialização e reenviado
+    de volta depois de cada gravação, pra não perder o controle de "aula já
+    processada" entre uma execução e a próxima. Sem essa env var (uso local, no
+    Windows), o comportamento é 100% o mesmo de sempre: só o arquivo local."""
 
     def __init__(self, db_path: str = "data/med_automator.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._gcs_bucket_name = os.environ.get("GCS_DB_BUCKET")
+        self._gcs_blob_name = os.environ.get("GCS_DB_BLOB", self.db_path.name)
+        self._download_db_from_gcs()
         self._init_db()
+
+    def _get_gcs_bucket(self):
+        """Lazy: só importa google-cloud-storage se GCS_DB_BUCKET estiver configurado
+        (dependência opcional, não precisa estar instalada pra uso local)."""
+        if not self._gcs_bucket_name:
+            return None
+        try:
+            from google.cloud import storage
+        except ImportError:
+            logger.warning("GCS_DB_BUCKET configurado mas google-cloud-storage não está instalado - ignorando.")
+            return None
+        try:
+            client = storage.Client()
+            return client.bucket(self._gcs_bucket_name)
+        except Exception as e:
+            logger.error(f"Falha ao conectar no bucket GCS '{self._gcs_bucket_name}': {e}")
+            return None
+
+    def _download_db_from_gcs(self) -> None:
+        """Baixa o .db do bucket ANTES de abrir a conexão, se existir um lá (roda
+        uma vez, no __init__). Se o blob ainda não existir (primeira execução),
+        segue com um banco local novo - _init_db cria as tabelas normalmente."""
+        bucket = self._get_gcs_bucket()
+        if not bucket:
+            return
+        blob = bucket.blob(self._gcs_blob_name)
+        try:
+            if blob.exists():
+                blob.download_to_filename(str(self.db_path))
+                logger.info(f"Banco de dados baixado do GCS: gs://{self._gcs_bucket_name}/{self._gcs_blob_name}")
+            else:
+                logger.info(f"Nenhum banco de dados encontrado ainda em gs://{self._gcs_bucket_name}/{self._gcs_blob_name} - começando do zero.")
+        except Exception as e:
+            logger.error(f"Falha ao baixar o banco de dados do GCS (seguindo com o estado local): {e}")
+
+    def _upload_db_to_gcs(self) -> None:
+        """Sobe o .db pro bucket depois de cada gravação bem-sucedida - mantém a
+        cópia remota sempre atualizada por aula, não só no fim da execução (se o
+        job cair no meio, as aulas já gravadas até ali não se perdem)."""
+        bucket = self._get_gcs_bucket()
+        if not bucket:
+            return
+        try:
+            blob = bucket.blob(self._gcs_blob_name)
+            blob.upload_from_filename(str(self.db_path))
+        except Exception as e:
+            logger.error(f"Falha ao subir o banco de dados pro GCS: {e}")
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -26,26 +84,79 @@ class DatabaseManager:
                         unit_code TEXT NOT NULL,
                         lesson_name TEXT NOT NULL,
                         notebook_id TEXT,
+                        status TEXT DEFAULT 'success',
+                        details TEXT,
                         processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(unit_code, lesson_name)
                     )
                 """)
+                # Migração leve para bancos criados antes das colunas status/details existirem.
+                for column_def in ("status TEXT DEFAULT 'success'", "details TEXT"):
+                    try:
+                        conn.execute(f"ALTER TABLE completed_lessons ADD COLUMN {column_def}")
+                    except sqlite3.OperationalError:
+                        pass  # coluna já existe
                 conn.commit()
         except Exception as e:
             logger.error(f"Erro ao inicializar o banco de dados: {e}")
 
-    def mark_lesson_completed(self, unit_code: str, lesson_name: str, notebook_id: str):
-        """Registra uma aula como processada e salva o ID do NotebookLM."""
+    def mark_lesson_completed(
+        self,
+        unit_code: str,
+        lesson_name: str,
+        notebook_id: str,
+        status: str = "success",
+        details: str = None,
+    ):
+        """Registra o resultado do processamento de uma aula e salva o ID do NotebookLM.
+
+        `status` deve refletir honestamente o que aconteceu (ex.: 'success',
+        'partial_failure', 'error') - nunca 'success' quando uma etapa crítica falhou.
+        `details` pode trazer um resumo curto do que deu errado, quando aplicável.
+        """
         try:
             with self._get_connection() as conn:
                 conn.execute("""
-                    INSERT OR REPLACE INTO completed_lessons (unit_code, lesson_name, notebook_id)
-                    VALUES (?, ?, ?)
-                """, (unit_code, lesson_name, notebook_id))
+                    INSERT OR REPLACE INTO completed_lessons (unit_code, lesson_name, notebook_id, status, details)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (unit_code, lesson_name, notebook_id, status, details))
                 conn.commit()
-            logger.info(f"Aula {lesson_name} salva no banco de dados local.")
+            logger.info(f"Aula {lesson_name} salva no banco de dados local (status={status}).")
+            self._upload_db_to_gcs()
         except Exception as e:
             logger.error(f"Erro ao salvar aula no banco de dados: {e}")
+
+    def get_lesson_status(self, unit_code: str, lesson_name: str) -> Optional[Dict[str, Any]]:
+        """Retorna o registro salvo para essa aula específica (status/details/notebook_id),
+        ou None se ela nunca foi processada antes."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT lesson_name, notebook_id, status, details, processed_at
+                    FROM completed_lessons
+                    WHERE unit_code = ? AND lesson_name = ?
+                """, (unit_code, lesson_name))
+                row = cursor.fetchone()
+                if row:
+                    return {
+                        "lesson_name": row["lesson_name"],
+                        "notebook_id": row["notebook_id"],
+                        "status": row["status"] if row["status"] else "success",
+                        "details": row["details"],
+                        "processed_at": row["processed_at"],
+                    }
+        except Exception as e:
+            logger.error(f"Erro ao buscar status da aula {lesson_name}: {e}")
+        return None
+
+    def is_lesson_completed(self, unit_code: str, lesson_name: str) -> bool:
+        """Checagem rápida: essa aula específica já foi processada com SUCESSO?
+
+        Só conta como concluída quando status='success' - uma aula que falhou
+        (partial_failure/error) NÃO conta como concluída, pra ser automaticamente
+        retentada na próxima execução em vez de ficar pulada pra sempre."""
+        status_row = self.get_lesson_status(unit_code, lesson_name)
+        return bool(status_row and status_row["status"] == "success")
 
     def get_completed_lessons(self, unit_code: str) -> List[Dict[str, Any]]:
         """Retorna a lista de aulas já processadas para uma unidade curricular."""
@@ -53,8 +164,8 @@ class DatabaseManager:
         try:
             with self._get_connection() as conn:
                 cursor = conn.execute("""
-                    SELECT lesson_name, notebook_id, processed_at 
-                    FROM completed_lessons 
+                    SELECT lesson_name, notebook_id, status, details, processed_at
+                    FROM completed_lessons
                     WHERE unit_code = ?
                     ORDER BY processed_at DESC
                 """, (unit_code,))
@@ -63,6 +174,8 @@ class DatabaseManager:
                     lessons.append({
                         "lesson_name": row["lesson_name"],
                         "notebook_id": row["notebook_id"],
+                        "status": row["status"] if row["status"] else "success",
+                        "details": row["details"],
                         "processed_at": row["processed_at"]
                     })
         except Exception as e:

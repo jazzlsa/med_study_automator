@@ -1,0 +1,5 @@
+# entrypoint.sh roda dentro do container Linux (Cloud Run) - se o Git no Windows
+# converter pra CRLF no checkout, o container falha na hora de interpretar o
+# shebang (#!/bin/sh\r não é encontrado). Força LF sempre, em qualquer SO.
+*.sh text eol=lf
+Dockerfile text eol=lf
