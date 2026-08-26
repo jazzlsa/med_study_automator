@@ -66,17 +66,29 @@ GENERATE_FIRE_TIMEOUT_SECONDS = 60
 # uma única vez, depois que todas as fontes já foram adicionadas e indexadas.
 # Cada um é apenas disparado (--no-wait, default da CLI) e a conferência de que a
 # geração de fato terminou fica por conta do usuário no próprio NotebookLM depois.
+# Idioma forçado explicitamente via "--language" em cada comando de geração que
+# aceita a flag, em vez de confiar só na config de conta ("notebooklm language
+# set") - bug real visto em produção: mesmo com a conta configurada pra pt_BR
+# (e confirmada como "synced_to_server: true"), o slide_deck saiu em inglês
+# ("Cardiac Engineering Atlas") enquanto os outros tipos saíram certos na MESMA
+# rodada. "--language" tem prioridade maior que a config de conta (ordem real:
+# --language > env NOTEBOOKLM_HL > config > 'en'), então é mais confiável.
+# "flashcards" e "quiz" não têm essa flag (só a CLI de geração de imagem/texto
+# longo tem) - continuam dependendo só da config de conta, que funcionou nos
+# testes feitos até agora.
+STUDIO_LANGUAGE = "pt_BR"
+
 STUDIO_ARTIFACT_SPECS = [
-    {"key": "audio", "args": ["generate", "audio"]},
-    {"key": "report", "args": ["generate", "report", "--format", "study-guide"]},
+    {"key": "audio", "args": ["generate", "audio", "--language", STUDIO_LANGUAGE]},
+    {"key": "report", "args": ["generate", "report", "--format", "study-guide", "--language", STUDIO_LANGUAGE]},
     {"key": "flashcards", "args": ["generate", "flashcards", "--difficulty", "hard", "--quantity", "more"]},
     {"key": "quiz", "args": ["generate", "quiz", "--difficulty", "hard", "--quantity", "more"]},
-    {"key": "slide_deck", "args": ["generate", "slide-deck"]},
-    {"key": "video", "args": ["generate", "video"]},
-    {"key": "infographic", "args": ["generate", "infographic"]},
+    {"key": "slide_deck", "args": ["generate", "slide-deck", "--language", STUDIO_LANGUAGE]},
+    {"key": "video", "args": ["generate", "video", "--language", STUDIO_LANGUAGE]},
+    {"key": "infographic", "args": ["generate", "infographic", "--language", STUDIO_LANGUAGE]},
     # "data-table" exige uma descrição (não tem comportamento default sem argumento,
     # ao contrário dos outros tipos) - por isso passamos uma descrição genérica.
-    {"key": "data_table", "args": ["generate", "data-table", "Tabela com os principais conceitos, comparações e dados da aula"]},
+    {"key": "data_table", "args": ["generate", "data-table", "Tabela com os principais conceitos, comparações e dados da aula", "--language", STUDIO_LANGUAGE]},
 ]
 
 # "generate mind-map" é a única exceção: a CLI não tem --wait/--no-wait para ele -
@@ -505,7 +517,7 @@ class NotebookLMClient:
             # "generate mind-map" não tem modo fire-and-forget: já bloqueia até terminar.
             logger.info("Solicitando geração de 'mind_map' no Estúdio do NotebookLM (chamada bloqueante)...")
             mind_map_result = self._run_cli(
-                ["generate", "mind-map", "-n", notebook_id],
+                ["generate", "mind-map", "-n", notebook_id, "--language", STUDIO_LANGUAGE],
                 timeout=MIND_MAP_TIMEOUT_SECONDS,
             )
             if mind_map_result["success"]:

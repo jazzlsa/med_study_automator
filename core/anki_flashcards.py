@@ -169,11 +169,14 @@ def build_flashcards_apkg(
     falhas viram success=False, pra quem chama decidir sem travar o pipeline.
     """
     try:
-        # Hierarquia "Medicina::<UC>::<aula>" (reaproveitando app.anki_root_deck de
-        # config/settings.py) - cada aula cai no seu próprio deck, nada misturado.
+        # Hierarquia "Medicina::Segundo Ano::<UC>::<aula>" (pedido explícito da
+        # usuária) - tem que bater com a mesma hierarquia usada por
+        # core/anki_connect.py (sincronização ao vivo via AnkiConnect), senão o
+        # .apkg (Drive, sempre gerado) e o Anki ao vivo (só quando disponível)
+        # divergem em qual deck a aula cai.
         deck_id = _stable_id(unit_code, lesson_name)
         root_deck = settings.app.anki_root_deck
-        deck_name = f"{root_deck}::{unit_code}::{lesson_name}"
+        deck_name = f"{root_deck}::Segundo Ano::{unit_code}::{lesson_name}"
         deck = genanki.Deck(deck_id, deck_name)
 
         # {basename: caminho_completo} - dict em vez de lista pra dedup automático
