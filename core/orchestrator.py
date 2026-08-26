@@ -6,6 +6,7 @@ from core.multimodal_processor import multimodal_processor
 from core.notebooklm_client import notebooklm_client
 from core.sheets_client import sheets_client
 from core.anki_flashcards import build_flashcards_apkg
+from core import anki_connect
 from core.drive_sync import drive_sync
 from database.db import db_manager
 from utils.logger import logger
@@ -155,6 +156,15 @@ class Orchestrator:
                 else:
                     logger.error(f"Falha ao gerar .apkg de flashcards: {apkg_result['error']}")
                     step_failures.append(f"geração de flashcards ({apkg_result['error']})")
+
+                # 2.6. Sincronização AO VIVO com o Anki via AnkiConnect, quando
+                # disponível (só funciona local, com o Anki aberto - no Cloud Run
+                # simplesmente não está disponível e é pulada silenciosamente, sem
+                # afetar o resultado do pipeline). Roda em paralelo ao .apkg, não
+                # no lugar dele - o .apkg continua sendo a via garantida.
+                anki_sync_result = anki_connect.sync_flashcards_to_anki(flashcards, unit_code, lesson_name)
+                if anki_sync_result["available"] and not anki_sync_result["success"]:
+                    step_failures.append(f"sincronização com o Anki ({anki_sync_result['error']})")
             elif gemini_result.get("success"):
                 logger.warning("Gemini não retornou nenhum flashcard para esta aula - .apkg não foi gerado.")
 

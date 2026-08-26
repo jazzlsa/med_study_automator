@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 from google import genai
 from google.genai import types
 from google.genai.errors import ServerError, ClientError
+from config.settings import settings
 from utils.logger import logger
 from dotenv import load_dotenv
 
@@ -33,6 +34,12 @@ FILE_ACTIVE_POLL_TIMEOUT_SECONDS = 120
 # chance de 503 em arquivos pesados). Só é usado se o ffmpeg estiver instalado.
 AUDIO_COMPRESSION_BITRATE = "64k"
 AUDIO_COMPRESSION_TIMEOUT_SECONDS = 180
+
+# Mínimo de flashcards por aula - pedido explícito no prompt (abaixo) e reforçado
+# aqui como rede de segurança: se o Gemini mesmo assim devolver menos que isso
+# (acontece com aulas de conteúdo mais curto), _ensure_min_flashcards completa a
+# diferença reaproveitando a mesma transcrição, sem precisar reprocessar áudio/slide.
+MIN_FLASHCARDS_PER_LESSON = 20
 
 
 class GeminiOverloadedError(Exception):
@@ -317,6 +324,114 @@ class MultimodalProcessor:
                 return None
         return None
 
+    def _pick_slide_for_card(self, card: Dict[str, Any], slide_paths: List[Path]) -> Optional[Path]:
+        """Decide de qual PDF de slide (quando a aula tem mais de um) tirar a imagem
+        de um card - casa o nome do arquivo citado em "fonte" com os slides
+        realmente disponíveis; sem match claro (ou só 1 slide na aula, caso comum),
+        cai no primeiro."""
+        if not slide_paths:
+            return None
+        if len(slide_paths) == 1:
+            return slide_paths[0]
+        fonte = (card.get("fonte") or "").lower()
+        for sp in slide_paths:
+            if sp.name.lower() in fonte:
+                return sp
+        return slide_paths[0]
+
+    def _attach_slide_images(
+        self, flashcards: List[Dict[str, Any]], slide_paths: List[Path], lesson_name: str
+    ) -> None:
+        """Renderiza (sob demanda, só as páginas realmente referenciadas) a imagem do
+        slide indicada pelo Gemini em "imagem_slide_pagina" e anexa o caminho local em
+        card["imagem_path"] - core/anki_flashcards.py usa isso pra embutir a imagem no
+        campo "Imagem" do flashcard e incluir o arquivo no .apkg como mídia.
+
+        Nunca derruba o pipeline por causa disso: número de página inválido ou
+        qualquer erro de renderização só loga um aviso e deixa o card sem imagem."""
+        if not slide_paths:
+            return
+        from core.slide_extractor import slide_extractor  # import tardio: evita custo de import do pymupdf quando não há slide
+
+        for card in flashcards:
+            page = card.get("imagem_slide_pagina")
+            if not page:
+                continue
+            try:
+                page = int(page)
+            except (TypeError, ValueError):
+                continue
+            slide = self._pick_slide_for_card(card, slide_paths)
+            if not slide:
+                continue
+            try:
+                image_path = slide_extractor.extract_single_page(slide, page, lesson_name)
+                card["imagem_path"] = str(image_path)
+            except Exception as e:
+                logger.warning(
+                    f"Não consegui extrair a página {page} de '{slide.name}' pro card "
+                    f"'{(card.get('enunciado') or card.get('assertiva') or '')[:60]}': {e}"
+                )
+
+    def _top_up_flashcards(
+        self, flashcards: List[Dict[str, Any]], transcript: Optional[str], unit_code: str, lesson_name: str
+    ) -> List[Dict[str, Any]]:
+        """Completa `flashcards` até MIN_FLASHCARDS_PER_LESSON pedindo os que faltam
+        ao Gemini com base na MESMA transcrição já obtida (sem reprocessar áudio/slide -
+        bem mais barato). Rede de segurança pro pedido do prompt principal, pra casos
+        de aula com conteúdo mais curto onde o modelo devolveu menos que o mínimo.
+        Nunca derruba o pipeline: se a chamada extra falhar, devolve os flashcards
+        originais mesmo (loga um aviso)."""
+        missing = MIN_FLASHCARDS_PER_LESSON - len(flashcards)
+        if missing <= 0 or not transcript:
+            return flashcards
+
+        logger.info(
+            f"Gemini devolveu só {len(flashcards)} flashcard(s) (mínimo é {MIN_FLASHCARDS_PER_LESSON}) - "
+            f"pedindo mais {missing} com base na transcrição já obtida..."
+        )
+        existing_questions = [
+            (c.get("enunciado") or c.get("assertiva") or "").strip()
+            for c in flashcards
+            if (c.get("enunciado") or c.get("assertiva"))
+        ]
+        existing_block = "\n".join(f"- {q}" for q in existing_questions) or "(nenhum ainda)"
+
+        prompt = f"""
+        Você é um médico especialista e professor sênior.
+        Gere EXATAMENTE {missing} flashcards NOVOS de alto rendimento para a aula
+        '{lesson_name}' da unidade '{unit_code}', com base na transcrição abaixo.
+
+        Os flashcards a seguir JÁ EXISTEM para esta aula - NÃO repita as mesmas
+        perguntas nem variações óbvias delas; cubra ângulos/tópicos diferentes:
+        {existing_block}
+
+        Mesmo formato de campos de "tipo" mc/vf já usado antes ("topico_busca",
+        "enunciado"/"assertiva", "resposta_correta"/"gabarito", "opcoes_erradas"
+        quando mc, "contexto_enunciado" quando vf, "pegadinha", "explicacao"
+        começando com "💡 GABARITO COMENTADO: [TÓPICO]", "fonte" indicando que veio
+        da transcrição, ex.: "Transcrição da aula, {lesson_name}").
+
+        Retorne EXATAMENTE um JSON válido no formato {{"flashcards": [...]}} e nada mais.
+
+        Transcrição da aula:
+        ---
+        {transcript}
+        ---
+        """
+        try:
+            response = self._generate_with_retry([prompt])
+            result_json = json.loads(response.text, strict=False)
+            new_flashcards = result_json.get("flashcards") or []
+            if new_flashcards:
+                logger.info(f"{len(new_flashcards)} flashcard(s) adicional(is) gerado(s) para completar o mínimo.")
+                self._enrich_flashcards_with_videos(new_flashcards)
+                return flashcards + new_flashcards
+            logger.warning("Pedido de flashcards adicionais não retornou nenhum card novo.")
+        except Exception as e:
+            logger.warning(f"Falha ao pedir flashcards adicionais pra completar o mínimo (seguindo com {len(flashcards)}): {e}")
+        return flashcards
+
     def _enrich_flashcards_with_videos(self, flashcards: List[Dict[str, Any]]) -> None:
         """Preenche o campo 'video' de cada flashcard com um ID real do YouTube,
         um por tópico único (não um por card, pra não multiplicar chamadas à toa
@@ -487,9 +602,12 @@ class MultimodalProcessor:
             3. "summary": Um resumo clínico estruturado, focado em fisiopatologia, diagnóstico, conduta e pérolas clínicas.
             4. "flashcards": uma lista de flashcards de alto rendimento cobrindo os pontos-chave
                da aula (fisiopatologia, critérios diagnósticos, farmacologia, conduta - evite
-               perguntas triviais/genéricas). Quantidade proporcional ao conteúdo real da aula,
-               sem forçar um número fixo. Cada item deve ter "tipo": "mc" (múltipla escolha) ou
-               "tipo": "vf" (verdadeiro ou falso), com os campos:
+               perguntas triviais/genéricas). Gere PELO MENOS {MIN_FLASHCARDS_PER_LESSON}
+               flashcards ao todo (pode gerar mais se o conteúdo real da aula sustentar - nunca
+               menos que isso, mesmo que precise cobrir o mesmo tópico por ângulos diferentes:
+               definição, mecanismo, diagnóstico diferencial, conduta, exceção/pegadinha
+               clássica). Cada item deve ter "tipo": "mc" (múltipla escolha) ou "tipo": "vf"
+               (verdadeiro ou falso), com os campos:
 
                Para "tipo": "mc":
                  - "topico_busca": tópico curto (3-8 palavras) pra buscar um vídeo do YouTube
@@ -503,6 +621,11 @@ class MultimodalProcessor:
                    [TÓPICO] pelo tema real), depois explique o raciocínio da resposta certa.
                  - "fonte": nome exato do arquivo de slide (um dos listados acima) + número da
                    página/slide de onde a informação foi tirada (ex.: "{slide_names}, slide 6").
+                 - "imagem_slide_pagina": SE (e só se) o slide indicado em "fonte" tiver uma
+                   imagem/diagrama/gráfico/tabela/fluxograma que ajude a responder ou ilustrar
+                   ESSE card especificamente, o número dessa página (inteiro, 1-based, igual ao
+                   de "fonte"); caso contrário null. NÃO marque página que só tem texto/bullet
+                   points - só vale a pena quando há de fato um elemento visual relevante.
 
                Para "tipo": "vf":
                  - "topico_busca": igual acima.
@@ -512,6 +635,7 @@ class MultimodalProcessor:
                  - "pegadinha": igual acima.
                  - "explicacao": igual acima, começando com "💡 GABARITO COMENTADO: [TÓPICO]".
                  - "fonte": igual acima.
+                 - "imagem_slide_pagina": igual acima.
 
             Retorne EXATAMENTE um JSON válido no seguinte formato e nada mais:
             {{
@@ -519,8 +643,8 @@ class MultimodalProcessor:
               "transcript": "Transcrição literal do áudio, do início ao fim...",
               "summary": "Resumo clínico detalhado...",
               "flashcards": [
-                {{"tipo": "mc", "topico_busca": "...", "enunciado": "...", "resposta_correta": "...", "opcoes_erradas": ["...", "..."], "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "..."}},
-                {{"tipo": "vf", "topico_busca": "...", "contexto_enunciado": "...", "assertiva": "...", "gabarito": "Verdadeiro", "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "..."}}
+                {{"tipo": "mc", "topico_busca": "...", "enunciado": "...", "resposta_correta": "...", "opcoes_erradas": ["...", "..."], "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null}},
+                {{"tipo": "vf", "topico_busca": "...", "contexto_enunciado": "...", "assertiva": "...", "gabarito": "Verdadeiro", "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null}}
               ]
             }}
             """
@@ -569,10 +693,20 @@ class MultimodalProcessor:
             tema = result_json.get("tema") or None
             flashcards = result_json.get("flashcards") or []
 
+            # Rede de segurança: completa até o mínimo se o Gemini devolveu menos
+            # (reaproveitando a mesma transcrição, sem reprocessar áudio/slide).
+            flashcards = self._top_up_flashcards(flashcards, result_json.get("transcript"), unit_code, lesson_name)
+
             # Busca vídeos REAIS do YouTube (grounding via Google Search) pros tópicos
             # dos flashcards, um por tópico único - nunca aceita um ID que o Gemini só
             # "lembrou" de memória, só o que veio de um resultado de busca de verdade.
             self._enrich_flashcards_with_videos(flashcards)
+
+            # Anexa a imagem do slide (quando o Gemini indicou uma página relevante em
+            # "imagem_slide_pagina") - card["imagem_path"] é lido por
+            # core/anki_flashcards.py pra embutir no campo "Imagem" do .apkg.
+            if settings.flashcards.extract_slide_images:
+                self._attach_slide_images(flashcards, [sp for sp in slide_paths if sp and sp.exists()], lesson_name)
 
             # Salva os flashcards gerados como JSON na pasta da aula (mesmo lugar da
             # transcrição) - é o que permite "gerar mais flashcards" depois (Streamlit)
