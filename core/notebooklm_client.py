@@ -367,6 +367,14 @@ class NotebookLMClient:
         padrão e a turma não consegue abrir o link da planilha sem pedir acesso
         manualmente. Chamado uma vez, logo após criar o notebook.
 
+        Também força o nível de acesso dos leitores para "todo o notebook"
+        (fontes + Estúdio), não só o chat - por padrão, um notebook novo com
+        link público habilitado deixa os leitores com acesso a "somente
+        conversa" (`share view-level` default é "chat"), escondendo fontes e
+        artefatos do Estúdio de quem abre o link. Bug real encontrado em
+        produção (2026-08-26): a usuária reportou que o notebook da UC06 só
+        mostrava o chat pra quem abria o link.
+
         Retorna {"success", "share_url", "error"} - o `share_url` retornado aqui
         (domínio notebook.google.com) é o link de verdade que funciona pra quem
         não é dono do notebook. Usar esse em vez de montar a URL manualmente:
@@ -379,6 +387,14 @@ class NotebookLMClient:
             logger.warning(f"Não consegui ativar o compartilhamento público do notebook {notebook_id}: {result['error']}")
             return {"success": False, "share_url": None, "error": result["error"]}
         share_url = (result["data"] or {}).get("share_url")
+
+        view_level_result = self._run_cli(["share", "view-level", "full", "-n", notebook_id], timeout=CREATE_TIMEOUT_SECONDS)
+        if not view_level_result["success"]:
+            logger.warning(
+                f"Compartilhamento público do notebook {notebook_id} ativado, mas não consegui liberar "
+                f"acesso a 'todo o notebook' pros leitores (ficaram só com o chat): {view_level_result['error']}"
+            )
+
         return {"success": True, "share_url": share_url, "error": None}
 
     def add_source_to_notebook(self, notebook_id: str, file_path: Path) -> Dict[str, Any]:
