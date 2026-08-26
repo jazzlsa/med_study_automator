@@ -32,6 +32,15 @@ SOURCE_INDEX_GRACE_SECONDS = 3
 SOURCE_ADD_MAX_ATTEMPTS = 2
 SOURCE_ADD_RETRY_WAIT_SECONDS = 5
 
+# "auth check" também se mostrou flaky em produção (2026-08-26: metade das
+# execuções horárias do Cloud Run falharam com "token_fetch: false" mesmo com
+# cookies/master_token válidos presentes - sintoma de instabilidade de rede
+# transitória, não sessão realmente expirada) - antes disso, uma falha ISOLADA
+# de rede nessa checagem abortava a execução inteira ANTES de tocar em qualquer
+# aula, desperdiçando a rodada inteira daquela hora à toa.
+AUTH_CHECK_MAX_ATTEMPTS = 3
+AUTH_CHECK_RETRY_WAIT_SECONDS = 10
+
 # Espera final por TODAS as fontes do notebook (não só as que este processo acabou
 # de adicionar) antes de disparar a geração do Estúdio - pega fontes reaproveitadas
 # de tentativas anteriores e fontes "fantasma" deixadas por um 'source add' que
@@ -173,8 +182,25 @@ class NotebookLMClient:
 
         Feito pra ser chamado logo no início de uma execução automática, pra falhar
         rápido e visível ANTES de começar a processar qualquer aula, em vez de só
-        descobrir a autenticação expirada no meio do trabalho."""
-        return self._run_cli(["auth", "check", "--test", "--passive"], timeout=AUTH_CHECK_TIMEOUT_SECONDS)
+        descobrir a autenticação expirada no meio do trabalho.
+
+        Faz até AUTH_CHECK_MAX_ATTEMPTS tentativas com espera entre elas - essa
+        checagem se mostrou flaky em produção por instabilidade de rede transitória
+        (não por sessão de fato expirada), e sem retry uma única falha de rede
+        isolada desperdiçava a execução horária inteira antes mesmo de começar."""
+        last_result = None
+        for attempt in range(1, AUTH_CHECK_MAX_ATTEMPTS + 1):
+            last_result = self._run_cli(["auth", "check", "--test", "--passive"], timeout=AUTH_CHECK_TIMEOUT_SECONDS)
+            if last_result["success"]:
+                return last_result
+            if attempt < AUTH_CHECK_MAX_ATTEMPTS:
+                logger.warning(
+                    f"Checagem de autenticação falhou (tentativa {attempt}/{AUTH_CHECK_MAX_ATTEMPTS}) - "
+                    f"tentando de novo em {AUTH_CHECK_RETRY_WAIT_SECONDS}s (pode ser instabilidade de rede "
+                    f"transitória, não sessão realmente expirada): {last_result['error']}"
+                )
+                time.sleep(AUTH_CHECK_RETRY_WAIT_SECONDS)
+        return last_result
 
     def notebook_exists(self, notebook_id: str) -> bool:
         """Confere se um notebook_id ainda existe de verdade no NotebookLM (ex.:
