@@ -1,5 +1,6 @@
 import os
 import json
+import json_repair
 import random
 import shutil
 import subprocess
@@ -101,24 +102,35 @@ class MultimodalProcessor:
     @staticmethod
     def _parse_json_response(text: str, context: str) -> Any:
         """json.loads com strict=False (tolera controle não escapado em strings -
-        comum em transcrições longas) e, se mesmo assim falhar, loga um trecho do
-        texto ao redor da posição exata do erro antes de propagar. Sem isso, um
-        "Expecting ',' delimiter: line X column Y" genérico não dá nenhuma pista
-        de causa real (resposta truncada por limite de tokens? erro pontual de
-        formatação do modelo? outra coisa?) - caso real visto em produção sem
-        diagnóstico suficiente pra saber qual dos dois foi."""
+        comum em transcrições longas). Se mesmo assim falhar, loga um trecho do
+        texto ao redor da posição exata do erro (senão um "Expecting ',' delimiter:
+        line X column Y" genérico não dá nenhuma pista de causa) e tenta reparar
+        com json_repair antes de desistir - causa real confirmada em produção:
+        sem response_schema estruturado, o Gemini às vezes esquece de escapar
+        aspas literais dentro de um valor string (ex.: transcrição de alguém
+        lendo uma citação em voz alta: `"Rapidinho. "Este relato..."`), o que
+        quebra o parser estrito do Python mesmo com strict=False."""
         try:
             return json.loads(text, strict=False)
         except json.JSONDecodeError as e:
             snippet_start = max(0, e.pos - 200)
             snippet_end = min(len(text), e.pos + 200)
-            logger.error(
-                f"JSON inválido na resposta do Gemini ({context}): {e}. "
+            logger.warning(
+                f"JSON malformado na resposta do Gemini ({context}): {e}. "
                 f"Tamanho total da resposta: {len(text)} chars. "
-                f"Termina em reticências = resposta pode ter sido truncada por limite de "
-                f"tokens. Trecho ao redor do erro: ...{text[snippet_start:snippet_end]!r}..."
+                f"Trecho ao redor do erro: ...{text[snippet_start:snippet_end]!r}... "
+                f"Tentando reparar com json_repair antes de desistir."
             )
-            raise
+            try:
+                repaired = json_repair.loads(text)
+            except Exception as repair_err:
+                logger.error(f"json_repair também falhou ({context}): {repair_err}")
+                raise e
+            if not repaired:
+                logger.error(f"json_repair não conseguiu recuperar nada útil ({context}) - resposta provavelmente truncada.")
+                raise e
+            logger.warning(f"JSON reparado com sucesso via json_repair ({context}) - resultado pode estar incompleto, revisar se possível.")
+            return repaired
 
     def _upload_and_wait(self, path: Path, uploaded_files: list) -> Any:
         """Sobe `path` pro Gemini. Se o nome do arquivo tiver caractere não-ASCII

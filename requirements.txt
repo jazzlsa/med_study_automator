@@ -13,6 +13,13 @@ google-genai>=0.1.1
 pymupdf>=1.24.0
 pillow>=10.2.0
 
+# Reparo de JSON malformado retornado pelo Gemini - sem response_schema
+# estruturado, o modelo às vezes esquece de escapar aspas literais dentro de
+# valores string (ex.: transcrição de alguém lendo uma citação em voz alta),
+# o que quebra json.loads mesmo com strict=False. Caso real visto em produção
+# (core/multimodal_processor.py, _parse_json_response).
+json_repair>=0.25.0
+
 # Anki e Integrações
 requests>=2.31.0
 genanki>=0.13.1
