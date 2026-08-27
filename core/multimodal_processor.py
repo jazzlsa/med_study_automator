@@ -12,6 +12,7 @@ from google import genai
 from google.genai import types
 from google.genai.errors import ServerError, ClientError
 from config.settings import settings
+from core.file_sniff import guess_mime_type
 from utils.logger import logger
 from dotenv import load_dotenv
 
@@ -97,6 +98,28 @@ class MultimodalProcessor:
 
         return file_ref
 
+    @staticmethod
+    def _parse_json_response(text: str, context: str) -> Any:
+        """json.loads com strict=False (tolera controle não escapado em strings -
+        comum em transcrições longas) e, se mesmo assim falhar, loga um trecho do
+        texto ao redor da posição exata do erro antes de propagar. Sem isso, um
+        "Expecting ',' delimiter: line X column Y" genérico não dá nenhuma pista
+        de causa real (resposta truncada por limite de tokens? erro pontual de
+        formatação do modelo? outra coisa?) - caso real visto em produção sem
+        diagnóstico suficiente pra saber qual dos dois foi."""
+        try:
+            return json.loads(text, strict=False)
+        except json.JSONDecodeError as e:
+            snippet_start = max(0, e.pos - 200)
+            snippet_end = min(len(text), e.pos + 200)
+            logger.error(
+                f"JSON inválido na resposta do Gemini ({context}): {e}. "
+                f"Tamanho total da resposta: {len(text)} chars. "
+                f"Termina em reticências = resposta pode ter sido truncada por limite de "
+                f"tokens. Trecho ao redor do erro: ...{text[snippet_start:snippet_end]!r}..."
+            )
+            raise
+
     def _upload_and_wait(self, path: Path, uploaded_files: list) -> Any:
         """Sobe `path` pro Gemini. Se o nome do arquivo tiver caractere não-ASCII
         (comum: nome de aula com acento, ex.: "Herança"), sobe uma CÓPIA com nome
@@ -117,7 +140,13 @@ class MultimodalProcessor:
             logger.debug(f"Nome de arquivo com acento ('{path.name}') - subindo cópia sanitizada pro Gemini: {temp_ascii_copy.name}")
 
         try:
-            f_ref = self.client.files.upload(file=str(upload_path))
+            # mime_type explícito em vez de deixar o SDK adivinhar pela extensão via
+            # mimetypes.guess_type() do sistema - bug real visto em produção: no
+            # container Linux isso retorna None pra .pptx/.docx/etc (funciona no
+            # Windows local, onde foi testado, mas falha lá com "Unknown mime type").
+            mime_type = guess_mime_type(upload_path.name)
+            upload_config = types.UploadFileConfig(mime_type=mime_type) if mime_type else None
+            f_ref = self.client.files.upload(file=str(upload_path), config=upload_config)
             uploaded_files.append(f_ref)
             return self._wait_for_active(f_ref)
         finally:
@@ -432,7 +461,7 @@ class MultimodalProcessor:
         """
         try:
             response = self._generate_with_retry([prompt])
-            result_json = json.loads(response.text, strict=False)
+            result_json = self._parse_json_response(response.text, "_ensure_min_flashcards")
             new_flashcards = result_json.get("flashcards") or []
             if new_flashcards:
                 logger.info(f"{len(new_flashcards)} flashcard(s) adicional(is) gerado(s) para completar o mínimo.")
@@ -551,7 +580,7 @@ class MultimodalProcessor:
 
         try:
             response = self._generate_with_retry([prompt])
-            result_json = json.loads(response.text, strict=False)
+            result_json = self._parse_json_response(response.text, "generate_more_flashcards")
             new_flashcards = result_json.get("flashcards") or []
 
             if not new_flashcards:
@@ -679,10 +708,7 @@ class MultimodalProcessor:
             response = self._generate_with_retry(contents)
 
             logger.info("Resposta bruta do Gemini recebida com sucesso.")
-            # strict=False: o Gemini às vezes retorna quebras de linha/controle não
-            # escapadas dentro dos valores string (comum em transcrições longas);
-            # o parser estrito do Python rejeitaria isso com "Invalid control character".
-            result_json = json.loads(response.text, strict=False)
+            result_json = self._parse_json_response(response.text, "analyze_lesson_materials")
 
             # Salva automaticamente a transcrição como arquivo .txt na pasta da aula
             # (pasta do áudio, ou do slide se não houver áudio) - o orchestrator usa

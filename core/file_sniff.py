@@ -51,6 +51,49 @@ _MIME_TO_KIND = {
     "text/plain": ("slide", ".txt"),
 }
 
+# Direção inversa (extensão -> mimeType), explícita em vez de depender do
+# `mimetypes.guess_type()` do sistema operacional - bug real visto em produção:
+# no container Linux (python:3.11-slim) ele NÃO resolve .pptx/.docx/etc (retorna
+# None e o upload pro Gemini falha com "Unknown mime type"), mesmo resolvendo
+# normalmente no Windows local onde isso foi testado. Cobre as mesmas extensões
+# de SLIDE_EXTS/AUDIO_EXTS (core/drive_sync.py).
+EXT_TO_MIME_TYPE = {
+    ".pdf": "application/pdf",
+    ".ppt": "application/vnd.ms-powerpoint",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".doc": "application/msword",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".odp": "application/vnd.oasis.opendocument.presentation",
+    ".odt": "application/vnd.oasis.opendocument.text",
+    ".rtf": "application/rtf",
+    ".txt": "text/plain",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".flac": "audio/flac",
+    ".wma": "audio/x-ms-wma",
+    ".opus": "audio/opus",
+    ".aiff": "audio/aiff",
+    ".aif": "audio/aiff",
+    ".weba": "audio/webm",
+}
+
+
+def guess_mime_type(filename: str) -> Optional[str]:
+    """Resolve o mimeType a partir da extensão do nome do arquivo, usando a
+    tabela explícita acima primeiro (portável entre SO) e só caindo pro
+    `mimetypes` padrão do Python como último recurso, pra outras extensões que
+    não são slide/áudio (não deveria acontecer no fluxo normal, mas não custa)."""
+    ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    if ext in EXT_TO_MIME_TYPE:
+        return EXT_TO_MIME_TYPE[ext]
+    import mimetypes
+    guessed, _ = mimetypes.guess_type(filename)
+    return guessed
+
 
 def sniff_kind_from_mime_type(mime_type: Optional[str]) -> Optional[Tuple[str, str]]:
     """Classifica por mimeType (ex.: vindo da Drive API, que detecta o tipo real

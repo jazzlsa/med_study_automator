@@ -5,6 +5,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+from core.file_sniff import guess_mime_type
 from utils.logger import logger
 
 # Caminho do executável da CLI notebooklm. Resolvido a partir de sys.executable
@@ -438,12 +439,18 @@ class NotebookLMClient:
 
         # "source add" já se mostrou flaky na prática (a CLI pode falhar de forma
         # transitória) - tenta de novo antes de desistir, importante rodando sozinho.
+        # --mime-type explícito em vez de deixar a CLI adivinhar sozinha - mesma
+        # cautela do upload pro Gemini (core/multimodal_processor.py): não dá pra
+        # confiar que a detecção automática por extensão funciona igual em todo
+        # ambiente (já vimos isso quebrar pra .pptx no container Linux).
+        mime_type = guess_mime_type(file_path.name)
+        add_cmd = ["source", "add", str(file_path.absolute()), "-n", notebook_id]
+        if mime_type:
+            add_cmd += ["--mime-type", mime_type]
+
         add_result = None
         for attempt in range(1, SOURCE_ADD_MAX_ATTEMPTS + 1):
-            add_result = self._run_cli(
-                ["source", "add", str(file_path.absolute()), "-n", notebook_id],
-                timeout=SOURCE_ADD_TIMEOUT_SECONDS,
-            )
+            add_result = self._run_cli(add_cmd, timeout=SOURCE_ADD_TIMEOUT_SECONDS)
             if add_result["success"]:
                 break
             if attempt < SOURCE_ADD_MAX_ATTEMPTS:
