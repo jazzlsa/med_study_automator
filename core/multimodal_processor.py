@@ -35,6 +35,17 @@ FILE_ACTIVE_POLL_TIMEOUT_SECONDS = 120
 AUDIO_COMPRESSION_BITRATE = "64k"
 AUDIO_COMPRESSION_TIMEOUT_SECONDS = 180
 
+# Nome do arquivo de transcrição gerado por este módulo (salvo na própria pasta
+# da aula). core/drive_sync.py importa essa constante pra EXCLUIR esse arquivo
+# do escaneamento de materiais - sem isso, uma aula que ficou "partial_failure"
+# numa tentativa anterior (já gerou a transcrição, mas falhou em outra etapa)
+# seria reprocessada incluindo sua PRÓPRIA transcrição como se fosse material
+# original, alimentando o Gemini/NotebookLM com o próprio output de uma rodada
+# anterior. O orchestrator já tem seu próprio mecanismo deliberado pra adicionar
+# esse arquivo como fonte extra (via o campo "transcript_path" do retorno de
+# analyze_lesson_materials) - não precisa (e não deve) vir do scanner de pasta.
+GENERATED_TRANSCRIPT_FILENAME = "transcricao_aula.txt"
+
 # Mínimo de flashcards por aula - pedido explícito no prompt (abaixo) e reforçado
 # aqui como rede de segurança: se o Gemini mesmo assim devolver menos que isso
 # (acontece com aulas de conteúdo mais curto), _ensure_min_flashcards completa a
@@ -460,7 +471,7 @@ class MultimodalProcessor:
     ) -> Dict[str, Any]:
         """Gera `quantity` flashcards NOVOS pra uma aula já processada antes, sem
         reenviar slide/áudio pro Gemini de novo - reaproveita a transcrição salva
-        em `transcricao_aula.txt` (bem mais barato que reprocessar o áudio).
+        em `transcricao_aula.txt` (GENERATED_TRANSCRIPT_FILENAME, bem mais barato que reprocessar o áudio).
 
         Evita repetir pergunta já feita passando os enunciados/assertivas já
         existentes (lidos de `flashcards.json`, salvo por analyze_lesson_materials)
@@ -468,7 +479,7 @@ class MultimodalProcessor:
         `flashcards.json` (não sobrescreve os antigos).
 
         Retorna {"success", "new_flashcards", "all_flashcards", "error"}."""
-        transcript_path = lesson_folder / "transcricao_aula.txt"
+        transcript_path = lesson_folder / GENERATED_TRANSCRIPT_FILENAME
         if not transcript_path.exists():
             return {
                 "success": False, "new_flashcards": [], "all_flashcards": [],
@@ -683,7 +694,7 @@ class MultimodalProcessor:
                 else None
             )
             if lesson_dir and lesson_dir.exists() and "transcript" in result_json:
-                candidate_path = lesson_dir / "transcricao_aula.txt"
+                candidate_path = lesson_dir / GENERATED_TRANSCRIPT_FILENAME
                 candidate_path.write_text(result_json["transcript"], encoding="utf-8")
                 logger.info(f"Transcrição salva com sucesso em: {candidate_path}")
                 transcript_path = candidate_path

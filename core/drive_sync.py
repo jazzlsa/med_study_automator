@@ -1,11 +1,75 @@
 import os
+import shutil
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from utils.logger import logger
 from config.settings import settings
+from core.file_sniff import sniff_kind_from_bytes, sniff_kind_from_mime_type
+from core.multimodal_processor import GENERATED_TRANSCRIPT_FILENAME
 
-SLIDE_EXTS = (".pdf",)
-AUDIO_EXTS = (".mp3", ".wav", ".m4a")
+# Nomes de arquivo que são OUTPUT do próprio pipeline (gerados numa rodada
+# anterior), não material original da aula - nunca devem ser tratados como uma
+# fonte "nova" pelo scanner, senão uma aula que ficou partial_failure numa
+# tentativa e é retentada acabaria realimentando sua própria transcrição como
+# se fosse conteúdo original. O orchestrator já tem seu próprio mecanismo
+# deliberado pra adicionar a transcrição como fonte extra quando apropriado.
+GENERATED_FILENAMES = {GENERATED_TRANSCRIPT_FILENAME}
+
+# Extensões reconhecidas de cara pelo nome do arquivo. Qualquer coisa fora
+# dessa lista (incluindo arquivo SEM extensão nenhuma) ainda pode ser
+# reconhecida via core/file_sniff.py (conteúdo/mimeType) antes de ser
+# descartada - ver _find_direct_materials em cada scanner abaixo.
+SLIDE_EXTS = (".pdf", ".ppt", ".pptx", ".doc", ".docx", ".odp", ".odt", ".rtf", ".txt")
+AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".oga", ".flac", ".wma", ".opus", ".aiff", ".aif")
+
+# Tamanho máximo de arquivo que vale a pena ler inteiro na memória só pra
+# identificar o tipo por conteúdo (arquivo local, sem extensão reconhecida).
+# Acima disso, os primeiros KB já bastam pra a maioria das assinaturas (só a
+# distinção fina dentro de um ZIP/.pptx exige o arquivo inteiro, e nesse caso
+# _sniff_zip_kind já cai no chute "apresentação" quando não consegue abrir).
+_SNIFF_FULL_READ_LIMIT_BYTES = 100 * 1024 * 1024  # 100MB
+_SNIFF_PREFIX_BYTES = 64 * 1024
+
+
+def _sniff_local_file(file_path: Path) -> Optional[tuple]:
+    """Tenta identificar um arquivo local cuja extensão não bateu com
+    SLIDE_EXTS/AUDIO_EXTS (incluindo arquivo sem extensão nenhuma) lendo o
+    conteúdo real. Lê o arquivo inteiro quando ele não é gigante (necessário
+    pra abrir .pptx/.docx como ZIP de verdade); acima do limite, lê só um
+    prefixo - o bastante pra identificar áudio (o caso real que motivou isso:
+    aula de áudio de ~45MB salva no Drive sem extensão no nome)."""
+    try:
+        size = file_path.stat().st_size
+        read_bytes = _SNIFF_PREFIX_BYTES if size > _SNIFF_FULL_READ_LIMIT_BYTES else None
+        with open(file_path, "rb") as f:
+            data = f.read(read_bytes) if read_bytes else f.read()
+        return sniff_kind_from_bytes(data)
+    except Exception as e:
+        logger.debug(f"Não foi possível ler '{file_path}' para identificar o tipo por conteúdo: {e}")
+        return None
+
+
+def _materialize_with_extension(original_path: Path, ext: str) -> Path:
+    """Copia (nunca move/renomeia o original no Drive) um arquivo sem extensão
+    reconhecida pra um cache local com a extensão correta anexada, pra que o
+    resto do pipeline (upload pro Gemini, `notebooklm source add`) receba um
+    arquivo com extensão normal, sem precisar de tratamento especial em cada
+    consumidor. Idempotente: se a cópia já existe com o mesmo tamanho do
+    original, não copia de novo."""
+    cache_dir = Path(settings.storage.temp_dir) / "ext_sniff_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    dest = cache_dir / f"{original_path.name}{ext}"
+    try:
+        if not dest.exists() or dest.stat().st_size != original_path.stat().st_size:
+            shutil.copy2(original_path, dest)
+            logger.info(
+                f"Arquivo '{original_path.name}' sem extensão reconhecida - identificado por "
+                f"conteúdo como '{ext}' e copiado pra '{dest}' (original no Drive não foi alterado)."
+            )
+    except Exception as e:
+        logger.warning(f"Falha ao materializar '{original_path}' com extensão '{ext}': {e} - usando o original.")
+        return original_path
+    return dest
 
 
 class DriveFolderScanner:
@@ -22,19 +86,30 @@ class DriveFolderScanner:
 
     @staticmethod
     def _find_direct_materials(folder: Path) -> Dict[str, List[str]]:
-        """Procura TODOS os slides (.pdf) e TODOS os áudios (.mp3/.wav/.m4a) direto
-        dentro de `folder` (não recursivo) - uma aula pode ter o áudio dividido em
-        várias partes (ex.: "Parte 1.m4a", "Parte 2.m4a"); pegar só o primeiro
-        deixaria o resto de fora silenciosamente."""
+        """Procura TODOS os slides e TODOS os áudios direto dentro de `folder`
+        (não recursivo) - uma aula pode ter o áudio dividido em várias partes
+        (ex.: "Parte 1.m4a", "Parte 2.m4a"); pegar só o primeiro deixaria o
+        resto de fora silenciosamente.
+
+        Extensão não reconhecida (incluindo nenhuma extensão) não é descartada
+        de cara - cai pra identificação por conteúdo (_sniff_local_file) antes
+        de desistir do arquivo."""
         slides: List[str] = []
         audios: List[str] = []
         for file_path in sorted(folder.iterdir()):
-            if file_path.is_file():
-                ext = file_path.suffix.lower()
-                if ext in SLIDE_EXTS:
-                    slides.append(str(file_path))
-                elif ext in AUDIO_EXTS:
-                    audios.append(str(file_path))
+            if not file_path.is_file() or file_path.name in GENERATED_FILENAMES:
+                continue
+            ext = file_path.suffix.lower()
+            if ext in SLIDE_EXTS:
+                slides.append(str(file_path))
+            elif ext in AUDIO_EXTS:
+                audios.append(str(file_path))
+            else:
+                sniffed = _sniff_local_file(file_path)
+                if sniffed:
+                    kind, detected_ext = sniffed
+                    materialized = _materialize_with_extension(file_path, detected_ext)
+                    (slides if kind == "slide" else audios).append(str(materialized))
         return {"slide": slides, "audio": audios}
 
     def _scan_lesson_folder(self, lesson_folder: Path) -> List[Dict[str, Any]]:
@@ -165,17 +240,34 @@ class DriveApiScanner:
 
     def _find_direct_materials(self, folder_id: str, download_dir: Path) -> Dict[str, List[str]]:
         """Baixa TODOS os slides e TODOS os áudios da pasta (não só o primeiro) -
-        mesmo motivo do backend local: uma aula pode ter o áudio em várias partes."""
+        mesmo motivo do backend local: uma aula pode ter o áudio em várias partes.
+
+        Extensão não reconhecida (incluindo nenhuma extensão) não é descartada
+        de cara - o mimeType que a própria Drive API já detectou no upload
+        (independente do nome do arquivo) é checado antes de desistir do
+        arquivo, e usado pra escolher a extensão certa ao baixar."""
         slides: List[str] = []
         audios: List[str] = []
         for entry in sorted(self._client.list_children(folder_id), key=lambda f: f["name"]):
-            if entry["mimeType"] == "application/vnd.google-apps.folder":
+            if entry["mimeType"] == "application/vnd.google-apps.folder" or entry["name"] in GENERATED_FILENAMES:
                 continue
-            ext = Path(entry["name"]).suffix.lower()
+            name = entry["name"]
+            ext = Path(name).suffix.lower()
             if ext in SLIDE_EXTS:
-                slides.append(str(self._client.download_file(entry["id"], download_dir / entry["name"])))
+                slides.append(str(self._client.download_file(entry["id"], download_dir / name)))
             elif ext in AUDIO_EXTS:
-                audios.append(str(self._client.download_file(entry["id"], download_dir / entry["name"])))
+                audios.append(str(self._client.download_file(entry["id"], download_dir / name)))
+            else:
+                sniffed = sniff_kind_from_mime_type(entry.get("mimeType"))
+                if sniffed:
+                    kind, detected_ext = sniffed
+                    dest_name = f"{name}{detected_ext}"
+                    logger.info(
+                        f"Arquivo '{name}' sem extensão reconhecida - mimeType do Drive "
+                        f"('{entry.get('mimeType')}') identifica como {kind} ('{detected_ext}')."
+                    )
+                    downloaded = str(self._client.download_file(entry["id"], download_dir / dest_name))
+                    (slides if kind == "slide" else audios).append(downloaded)
         return {"slide": slides, "audio": audios}
 
     def _list_subfolders(self, folder_id: str) -> List[Dict[str, Any]]:
