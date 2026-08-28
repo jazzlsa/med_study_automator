@@ -51,6 +51,11 @@ class FlashcardRules(BaseModel):
 
 class EnvSecrets(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
+    # Usada só pra geração de flashcards (core/claude_flashcards.py) - a
+    # transcrição de áudio continua no Gemini (única API com entendimento
+    # nativo de áudio nesse pipeline); a Claude entra depois, com a
+    # transcrição (texto) + slide (PDF) como entrada, sem precisar do áudio.
+    ANTHROPIC_API_KEY: Optional[str] = None
     ANKI_CONNECT_URL: str = "http://localhost:8765"
     GOOGLE_CREDENTIALS_PATH: Optional[Path] = None
     GOOGLE_SPREADSHEET_ID: Optional[str] = None

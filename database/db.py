@@ -97,6 +97,18 @@ class DatabaseManager:
                         conn.execute(f"ALTER TABLE completed_lessons ADD COLUMN {column_def}")
                     except sqlite3.OperationalError:
                         pass  # coluna já existe
+
+                # Contador de chamadas reais à API do Gemini por dia (UTC) - usado por
+                # core/multimodal_processor.py pra nunca ultrapassar a cota diária do
+                # tier gratuito (20 requisições/dia). Uma linha por dia, incrementada a
+                # cada tentativa de verdade (sucesso OU falha - a cota do Google conta
+                # as duas do mesmo jeito).
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS gemini_daily_usage (
+                        usage_date TEXT PRIMARY KEY,
+                        request_count INTEGER NOT NULL DEFAULT 0
+                    )
+                """)
                 conn.commit()
         except Exception as e:
             logger.error(f"Erro ao inicializar o banco de dados: {e}")
@@ -224,6 +236,50 @@ class DatabaseManager:
             self._upload_db_to_gcs()
         except Exception as e:
             logger.error(f"Erro ao marcar aula {lesson_name} como sincronizada com o Anki: {e}")
+
+    @staticmethod
+    def _today_utc() -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def get_gemini_request_count_today(self) -> int:
+        """Quantas chamadas reais à API do Gemini já foram feitas hoje (UTC) -
+        usado pra decidir ANTES de tentar uma chamada nova se ainda cabe na cota
+        diária do tier gratuito (20/dia), em vez de só descobrir depois que a
+        API já rejeitou."""
+        try:
+            with self._get_connection() as conn:
+                row = conn.execute(
+                    "SELECT request_count FROM gemini_daily_usage WHERE usage_date = ?",
+                    (self._today_utc(),),
+                ).fetchone()
+                return row["request_count"] if row else 0
+        except Exception as e:
+            logger.error(f"Erro ao ler contagem de requisições do Gemini hoje: {e}")
+            return 0  # em dúvida, não bloqueia - deixa a própria API rejeitar se precisar
+
+    def increment_gemini_request_count(self) -> int:
+        """Registra UMA chamada real à API do Gemini feita agora (sucesso OU
+        falha - a cota do Google conta as duas do mesmo jeito) e devolve o novo
+        total de hoje. Chamar isso ANTES de cada tentativa de verdade, nunca
+        depois - senão uma falha de rede antes de confirmar a contagem faria a
+        gente perder a conta real."""
+        today = self._today_utc()
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT INTO gemini_daily_usage (usage_date, request_count) VALUES (?, 1)
+                    ON CONFLICT(usage_date) DO UPDATE SET request_count = request_count + 1
+                """, (today,))
+                new_count = conn.execute(
+                    "SELECT request_count FROM gemini_daily_usage WHERE usage_date = ?", (today,)
+                ).fetchone()["request_count"]
+                conn.commit()
+            self._upload_db_to_gcs()
+            return new_count
+        except Exception as e:
+            logger.error(f"Erro ao registrar requisição do Gemini de hoje: {e}")
+            return self.get_gemini_request_count_today()
 
 
 db_manager = DatabaseManager()

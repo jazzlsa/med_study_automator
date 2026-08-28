@@ -14,6 +14,7 @@ from google.genai import types
 from google.genai.errors import ServerError, ClientError
 from config.settings import settings
 from core.file_sniff import guess_mime_type
+from database.db import db_manager
 from utils.logger import logger
 from dotenv import load_dotenv
 
@@ -25,9 +26,22 @@ load_dotenv()
 PRIMARY_MODEL = "gemini-3.6-flash"
 FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-3.5-flash"]
 
-MAX_RETRIES_PER_MODEL = 5
+# Reduzido de 5 pra 3 (com os 2 fallbacks, no máximo 3×3=9 chamadas reais por
+# aula, em vez de até 15) - especificamente pra não deixar uma única aula com
+# sobrecarga sustentada comer quase toda a cota diária do tier gratuito (20)
+# sozinha. O backoff exponencial já cresce rápido (4s/8s/16s), então 3
+# tentativas por modelo ainda cobre bem a maioria dos picos "temporários" de
+# demanda que o próprio erro do Google descreve.
+MAX_RETRIES_PER_MODEL = 3
 BASE_BACKOFF_SECONDS = 4
 MAX_BACKOFF_SECONDS = 60
+
+# Cota diária do tier GRATUITO da API do Gemini (confirmada em produção via erro
+# real: "generate_content_free_tier_requests, limit: 20"). Cada chamada de
+# verdade (sucesso OU falha) conta contra essa cota - por isso é rastreada e
+# checada ANTES de cada tentativa (database/db.py, tabela gemini_daily_usage),
+# não só depois que a API já rejeitou.
+GEMINI_FREE_TIER_DAILY_LIMIT = 20
 
 FILE_ACTIVE_POLL_INTERVAL_SECONDS = 2
 FILE_ACTIVE_POLL_TIMEOUT_SECONDS = 120
@@ -57,6 +71,11 @@ MIN_FLASHCARDS_PER_LESSON = 20
 
 class GeminiOverloadedError(Exception):
     """Levantado quando o modelo principal e todos os fallbacks esgotam as tentativas por 503."""
+
+
+class GeminiDailyBudgetExceededError(Exception):
+    """Levantado quando a cota diária do tier gratuito (GEMINI_FREE_TIER_DAILY_LIMIT)
+    já foi atingida - para de tentar em vez de continuar gastando a cota do dia."""
 
 
 class MultimodalProcessor:
@@ -255,16 +274,30 @@ class MultimodalProcessor:
         se esgotar as tentativas por sobrecarga (503) OU esbarrar numa cota esgotada
         (429), cai para os modelos de fallback da família Gemini 3.x antes de desistir
         de vez. Cota esgotada pula direto pro próximo modelo, sem gastar tentativas
-        de retry no mesmo modelo (a cota é por modelo, então insistir não ajuda)."""
+        de retry no mesmo modelo (a cota é por modelo, então insistir não ajuda).
+
+        Antes de CADA tentativa de verdade, checa o orçamento diário do tier
+        gratuito (GEMINI_FREE_TIER_DAILY_LIMIT) - se já foi atingido, para na
+        hora em vez de continuar gastando o resto da cota do dia numa aula só
+        que já está com sobrecarga sustentada."""
         models_to_try = [self.model_name] + [m for m in FALLBACK_MODELS if m != self.model_name]
         last_error: Optional[Exception] = None
 
         for model in models_to_try:
             for attempt in range(1, MAX_RETRIES_PER_MODEL + 1):
+                used_today = db_manager.get_gemini_request_count_today()
+                if used_today >= GEMINI_FREE_TIER_DAILY_LIMIT:
+                    raise GeminiDailyBudgetExceededError(
+                        f"Orçamento diário do Gemini (tier gratuito, {GEMINI_FREE_TIER_DAILY_LIMIT}/dia) "
+                        f"já foi atingido ({used_today} requisições hoje) - parando antes de gastar mais "
+                        f"cota. Tenta de novo amanhã (ou ative o tier pago pra não ter esse limite)."
+                    )
                 try:
+                    request_number_today = db_manager.increment_gemini_request_count()
                     logger.info(
                         f"Enviando requisição multimodal para o modelo {model} "
-                        f"(tentativa {attempt}/{MAX_RETRIES_PER_MODEL})..."
+                        f"(tentativa {attempt}/{MAX_RETRIES_PER_MODEL}; requisição "
+                        f"{request_number_today}/{GEMINI_FREE_TIER_DAILY_LIMIT} do dia)..."
                     )
                     response = self.client.models.generate_content(
                         model=model,
@@ -394,36 +427,44 @@ class MultimodalProcessor:
     def _attach_slide_images(
         self, flashcards: List[Dict[str, Any]], slide_paths: List[Path], lesson_name: str
     ) -> None:
-        """Renderiza (sob demanda, só as páginas realmente referenciadas) a imagem do
-        slide indicada pelo Gemini em "imagem_slide_pagina" e anexa o caminho local em
-        card["imagem_path"] - core/anki_flashcards.py usa isso pra embutir a imagem no
-        campo "Imagem" do flashcard e incluir o arquivo no .apkg como mídia.
+        """Renderiza (sob demanda, só as páginas realmente referenciadas) as imagens de
+        slide indicadas pelo Gemini e anexa os caminhos locais:
+          - "imagem_slide_pagina" -> card["imagem_path"] (lado da PERGUNTA - core/anki_flashcards.py
+            embute no campo "Imagem"; o prompt já instrui o Gemini a nunca apontar uma página
+            que entregue a resposta aqui, mas resolve os dois campos do mesmo jeito).
+          - "imagem_slide_pagina_gabarito" -> card["imagem_gabarito_path"] (lado da EXPLICAÇÃO -
+            core/anki_flashcards.py embute no início do campo "Explicação"; aqui uma imagem
+            rotulada/reveladora é o comportamento desejado).
 
         Nunca derruba o pipeline por causa disso: número de página inválido ou
-        qualquer erro de renderização só loga um aviso e deixa o card sem imagem."""
+        qualquer erro de renderização só loga um aviso e deixa o card sem essa imagem."""
         if not slide_paths:
             return
         from core.slide_extractor import slide_extractor  # import tardio: evita custo de import do pymupdf quando não há slide
 
         for card in flashcards:
-            page = card.get("imagem_slide_pagina")
-            if not page:
-                continue
-            try:
-                page = int(page)
-            except (TypeError, ValueError):
-                continue
-            slide = self._pick_slide_for_card(card, slide_paths)
-            if not slide:
-                continue
-            try:
-                image_path = slide_extractor.extract_single_page(slide, page, lesson_name)
-                card["imagem_path"] = str(image_path)
-            except Exception as e:
-                logger.warning(
-                    f"Não consegui extrair a página {page} de '{slide.name}' pro card "
-                    f"'{(card.get('enunciado') or card.get('assertiva') or '')[:60]}': {e}"
-                )
+            for page_field, target_field in (
+                ("imagem_slide_pagina", "imagem_path"),
+                ("imagem_slide_pagina_gabarito", "imagem_gabarito_path"),
+            ):
+                page = card.get(page_field)
+                if not page:
+                    continue
+                try:
+                    page = int(page)
+                except (TypeError, ValueError):
+                    continue
+                slide = self._pick_slide_for_card(card, slide_paths)
+                if not slide:
+                    continue
+                try:
+                    image_path = slide_extractor.extract_single_page(slide, page, lesson_name)
+                    card[target_field] = str(image_path)
+                except Exception as e:
+                    logger.warning(
+                        f"Não consegui extrair a página {page} de '{slide.name}' pro card "
+                        f"'{(card.get('enunciado') or card.get('assertiva') or '')[:60]}' ({page_field}): {e}"
+                    )
 
     def _top_up_flashcards(
         self, flashcards: List[Dict[str, Any]], transcript: Optional[str], unit_code: str, lesson_name: str
@@ -673,11 +714,28 @@ class MultimodalProcessor:
                    [TÓPICO] pelo tema real), depois explique o raciocínio da resposta certa.
                  - "fonte": nome exato do arquivo de slide (um dos listados acima) + número da
                    página/slide de onde a informação foi tirada (ex.: "{slide_names}, slide 6").
-                 - "imagem_slide_pagina": SE (e só se) o slide indicado em "fonte" tiver uma
-                   imagem/diagrama/gráfico/tabela/fluxograma que ajude a responder ou ilustrar
-                   ESSE card especificamente, o número dessa página (inteiro, 1-based, igual ao
-                   de "fonte"); caso contrário null. NÃO marque página que só tem texto/bullet
-                   points - só vale a pena quando há de fato um elemento visual relevante.
+                 - "imagem_slide_pagina": imagem mostrada do lado da PERGUNTA (antes de o aluno
+                   responder) - use SOMENTE quando a imagem for necessária pra formular ou
+                   entender a pergunta em si (ex.: "observe a imagem abaixo e identifique X"),
+                   E ela NÃO contiver nada que entregue a resposta. REGRA CRÍTICA, NÃO
+                   NEGOCIÁVEL: NUNCA aponte uma página cuja imagem tenha legenda, rótulo, seta
+                   ou texto que já nomeie/identifique a estrutura, resposta ou conceito que o
+                   card está perguntando - isso entrega a resposta antes de o aluno tentar
+                   responder, o que invalida o card inteiro. A grande maioria dos diagramas
+                   anatômicos rotulados (átrio, válvula, camada, estrutura já nomeada na
+                   imagem) SE ENCAIXA NESSA PROIBIÇÃO e não deve ir aqui. NUNCA use uma página
+                   de um documento tipo "roteiro com gabarito" ou similar (o próprio nome já
+                   avisa que tem resposta). Na dúvida, deixe null - é preferível um card sem
+                   imagem a um card que entrega a resposta. Número da página (inteiro, 1-based,
+                   igual ao de "fonte") ou null.
+                 - "imagem_slide_pagina_gabarito": imagem mostrada do lado da EXPLICAÇÃO (depois
+                   de o aluno já ter respondido) - aqui é o lugar certo pra imagens rotuladas,
+                   diagramas com a estrutura identificada, tabelas com a resposta, etc. (o
+                   oposto da regra acima: aqui QUANTO MAIS a imagem esclarecer/confirmar a
+                   resposta, melhor - ajuda a fixar o conteúdo). Use sempre que houver uma
+                   imagem no slide que reforce visualmente a resposta certa, mesmo que
+                   "imagem_slide_pagina" também esteja preenchido com uma página diferente.
+                   Número da página (inteiro, 1-based) ou null se não houver imagem relevante.
 
                Para "tipo": "vf":
                  - "topico_busca": igual acima.
@@ -688,6 +746,7 @@ class MultimodalProcessor:
                  - "explicacao": igual acima, começando com "💡 GABARITO COMENTADO: [TÓPICO]".
                  - "fonte": igual acima.
                  - "imagem_slide_pagina": igual acima.
+                 - "imagem_slide_pagina_gabarito": igual acima.
 
             Retorne EXATAMENTE um JSON válido no seguinte formato e nada mais:
             {{
@@ -695,8 +754,8 @@ class MultimodalProcessor:
               "transcript": "Transcrição literal do áudio, do início ao fim...",
               "summary": "Resumo clínico detalhado...",
               "flashcards": [
-                {{"tipo": "mc", "topico_busca": "...", "enunciado": "...", "resposta_correta": "...", "opcoes_erradas": ["...", "..."], "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null}},
-                {{"tipo": "vf", "topico_busca": "...", "contexto_enunciado": "...", "assertiva": "...", "gabarito": "Verdadeiro", "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null}}
+                {{"tipo": "mc", "topico_busca": "...", "enunciado": "...", "resposta_correta": "...", "opcoes_erradas": ["...", "..."], "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null, "imagem_slide_pagina_gabarito": null}},
+                {{"tipo": "vf", "topico_busca": "...", "contexto_enunciado": "...", "assertiva": "...", "gabarito": "Verdadeiro", "pegadinha": "", "explicacao": "💡 GABARITO COMENTADO: ...", "fonte": "...", "imagem_slide_pagina": null, "imagem_slide_pagina_gabarito": null}}
               ]
             }}
             """
@@ -751,9 +810,8 @@ class MultimodalProcessor:
             # "lembrou" de memória, só o que veio de um resultado de busca de verdade.
             self._enrich_flashcards_with_videos(flashcards)
 
-            # Anexa a imagem do slide (quando o Gemini indicou uma página relevante em
-            # "imagem_slide_pagina") - card["imagem_path"] é lido por
-            # core/anki_flashcards.py pra embutir no campo "Imagem" do .apkg.
+            # Anexa as imagens de slide indicadas pelo Gemini (pergunta e/ou gabarito) -
+            # ver _attach_slide_images pra detalhe de cada campo.
             if settings.flashcards.extract_slide_images:
                 self._attach_slide_images(flashcards, [sp for sp in slide_paths if sp and sp.exists()], lesson_name)
 
