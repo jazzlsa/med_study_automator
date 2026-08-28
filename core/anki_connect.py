@@ -167,6 +167,31 @@ def _vf_fields(card: Dict[str, Any], materia: str, uploaded_cache: Dict[str, str
     return dict(zip(FIELDS_VERDADEIRO_FALSO, values))
 
 
+def import_apkg_package(apkg_path: Path) -> Dict[str, Any]:
+    """Importa um .apkg já pronto direto pro Anki aberto na máquina, via
+    AnkiConnect (ação 'importPackage') - usado por sync_cloud_flashcards_to_anki.py
+    pra aulas processadas pelo Cloud Run, onde o AnkiConnect não estava
+    acessível na hora do processamento (container não alcança o localhost da
+    usuária). Ao contrário de sync_flashcards_to_anki (que reconstrói as notas
+    campo a campo a partir do JSON gerado durante o processamento), a mídia
+    (imagens dos slides) já vem embutida no próprio .apkg - não depende de
+    nenhum caminho de arquivo temporário, que já não existe mais depois que o
+    container do Cloud Run que gerou aquela aula terminou de rodar.
+
+    Retorna {"success", "available", "error"}. `available=False` (sem erro)
+    é o caso normal de Anki fechado - quem chama trata como "sincronização
+    pulada por enquanto", não como falha."""
+    if not is_available():
+        return {"success": True, "available": False, "error": None}
+    try:
+        _invoke("importPackage", path=str(apkg_path.absolute()))
+        logger.info(f"'.apkg' importado no Anki via AnkiConnect: {apkg_path.name}")
+        return {"success": True, "available": True, "error": None}
+    except Exception as e:
+        logger.warning(f"Falha ao importar '.apkg' no Anki via AnkiConnect ({apkg_path.name}): {e}")
+        return {"success": False, "available": True, "error": str(e)}
+
+
 def sync_flashcards_to_anki(
     flashcards: List[Dict[str, Any]], unit_code: str, lesson_name: str
 ) -> Dict[str, Any]:

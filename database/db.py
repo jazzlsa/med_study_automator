@@ -87,11 +87,12 @@ class DatabaseManager:
                         status TEXT DEFAULT 'success',
                         details TEXT,
                         processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        anki_synced_at TIMESTAMP,
                         UNIQUE(unit_code, lesson_name)
                     )
                 """)
-                # Migração leve para bancos criados antes das colunas status/details existirem.
-                for column_def in ("status TEXT DEFAULT 'success'", "details TEXT"):
+                # Migração leve para bancos criados antes das colunas abaixo existirem.
+                for column_def in ("status TEXT DEFAULT 'success'", "details TEXT", "anki_synced_at TIMESTAMP"):
                     try:
                         conn.execute(f"ALTER TABLE completed_lessons ADD COLUMN {column_def}")
                     except sqlite3.OperationalError:
@@ -181,5 +182,48 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Erro ao buscar aulas concluídas: {e}")
         return lessons
+
+    def get_lessons_pending_anki_sync(self) -> List[Dict[str, Any]]:
+        """Aulas concluídas com sucesso (em QUALQUER unidade) que ainda não foram
+        importadas no Anki desta máquina via AnkiConnect - usado pelo script
+        sync_cloud_flashcards_to_anki.py (aulas processadas pelo Cloud Run não
+        chegam ao Anki na hora, porque o container não alcança o localhost da
+        usuária; esse script tardio fecha essa lacuna quando roda localmente)."""
+        lessons = []
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.execute("""
+                    SELECT unit_code, lesson_name, notebook_id, processed_at
+                    FROM completed_lessons
+                    WHERE status = 'success' AND anki_synced_at IS NULL
+                    ORDER BY processed_at ASC
+                """)
+                for row in cursor.fetchall():
+                    lessons.append({
+                        "unit_code": row["unit_code"],
+                        "lesson_name": row["lesson_name"],
+                        "notebook_id": row["notebook_id"],
+                        "processed_at": row["processed_at"],
+                    })
+        except Exception as e:
+            logger.error(f"Erro ao buscar aulas pendentes de sincronização com o Anki: {e}")
+        return lessons
+
+    def mark_anki_synced(self, unit_code: str, lesson_name: str) -> None:
+        """Marca uma aula como já importada no Anki local (anki_synced_at =
+        agora), pra sync_cloud_flashcards_to_anki.py não tentar de novo a cada
+        execução."""
+        try:
+            with self._get_connection() as conn:
+                conn.execute("""
+                    UPDATE completed_lessons SET anki_synced_at = CURRENT_TIMESTAMP
+                    WHERE unit_code = ? AND lesson_name = ?
+                """, (unit_code, lesson_name))
+                conn.commit()
+            logger.info(f"Aula {lesson_name} marcada como sincronizada com o Anki.")
+            self._upload_db_to_gcs()
+        except Exception as e:
+            logger.error(f"Erro ao marcar aula {lesson_name} como sincronizada com o Anki: {e}")
+
 
 db_manager = DatabaseManager()
