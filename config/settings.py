@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 import yaml
@@ -67,6 +68,25 @@ class EnvSecrets(BaseSettings):
     GOOGLE_DRIVE_OAUTH_CLIENT_ID: Optional[str] = None
     GOOGLE_DRIVE_OAUTH_CLIENT_SECRET: Optional[str] = None
     GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN: Optional[str] = None
+
+    def model_post_init(self, __context) -> None:
+        super().model_post_init(__context)
+        # Se os segredos OAuth do Drive não foram definidos no .env / env vars,
+        # tenta carregar automaticamente de config/drive_oauth_secrets.json
+        if not (self.GOOGLE_DRIVE_OAUTH_CLIENT_ID and self.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET and self.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN):
+            json_path = Path("config/drive_oauth_secrets.json")
+            if json_path.exists():
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    if not self.GOOGLE_DRIVE_OAUTH_CLIENT_ID and data.get("client_id"):
+                        self.GOOGLE_DRIVE_OAUTH_CLIENT_ID = str(data["client_id"]).strip()
+                    if not self.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET and data.get("client_secret"):
+                        self.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET = str(data["client_secret"]).strip()
+                    if not self.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN and data.get("refresh_token"):
+                        self.GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN = str(data["refresh_token"]).strip()
+                except Exception:
+                    pass
 
     class Config:
         env_file = ".env"

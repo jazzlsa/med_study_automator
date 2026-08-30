@@ -9,11 +9,10 @@ from core.file_sniff import guess_mime_type
 from utils.logger import logger
 
 # Caminho do executável da CLI notebooklm. Resolvido a partir de sys.executable
-# (o notebooklm.exe fica ao lado do python.exe dentro de venv/Scripts) em vez de
-# depender do bare "notebooklm" estar no PATH do processo - isso quebra quando o
-# script roda "puro" (venv\Scripts\python.exe auto_pipeline.py, ou via Tarefa
-# Agendada do Windows), já que só ativar o venv manualmente ajusta o PATH.
-_notebooklm_sibling = Path(sys.executable).parent / "notebooklm.exe"
+# (o notebooklm/notebooklm.exe fica ao lado do python dentro de venv/bin ou venv/Scripts)
+# em vez de depender do bare "notebooklm" estar no PATH do processo.
+_sibling_name = "notebooklm.exe" if sys.platform == "win32" else "notebooklm"
+_notebooklm_sibling = Path(sys.executable).parent / _sibling_name
 NOTEBOOKLM_CLI = str(_notebooklm_sibling) if _notebooklm_sibling.exists() else (shutil.which("notebooklm") or "notebooklm")
 
 # Timeouts (segundos) para cada operação da CLI notebooklm-py. Os valores antigos

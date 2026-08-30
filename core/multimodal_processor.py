@@ -49,7 +49,7 @@ FILE_ACTIVE_POLL_TIMEOUT_SECONDS = 120
 # Bitrate/canal alvo ao recomprimir áudio antes do upload (reduz payload = menor
 # chance de 503 em arquivos pesados). Só é usado se o ffmpeg estiver instalado.
 AUDIO_COMPRESSION_BITRATE = "64k"
-AUDIO_COMPRESSION_TIMEOUT_SECONDS = 180
+AUDIO_COMPRESSION_TIMEOUT_SECONDS = 420
 
 # Nome do arquivo de transcrição gerado por este módulo (salvo na própria pasta
 # da aula). core/drive_sync.py importa essa constante pra EXCLUIR esse arquivo
