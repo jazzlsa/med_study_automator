@@ -18,6 +18,17 @@ _BASE_URL = "https://ntfy.sh"
 _TIMEOUT_SECONDS = 10
 
 
+def _latin1_safe(value: str) -> str:
+    """Torna um valor seguro pra usar num header HTTP.
+
+    O http.client do Python serializa headers como latin-1; emoji e outros
+    caracteres multibyte (🚨, ⚠️, 🧪...) estouram com 'latin-1 codec can't encode'.
+    Remove o que não couber em latin-1 e mantém o resto - acentos do pt-br (é, ç,
+    ã... U+0000-U+00FF) passam sem problema. Pros ícones de aviso, seguimos pelo
+    header `Tags` do ntfy, que renderiza os próprios ícones no app."""
+    return value.encode("latin-1", errors="ignore").decode("latin-1")
+
+
 def is_configured() -> bool:
     """True se um tópico ntfy estiver configurado (e o alerta deve disparar)."""
     return bool(settings.secrets.NTFY_TOPIC)
@@ -40,12 +51,15 @@ def send_notification(
         return False
 
     headers = {
-        "Title": title,
+        # Título/headers vão como latin-1 (limitação do http.client) - emoji do
+        # título é removido aqui e os ícones de severidade entram pelo `Tags`.
+        "Title": _latin1_safe(title),
         "Priority": priority,
     }
     if tags:
-        # ntfy aceita tags separadas por vírgula no header (emojis ou códigos).
-        headers["Tags"] = ",".join(tags)
+        # ntfy aceita tags separadas por vírgula no header (códigos ASCII como
+        # "rotating_light" que ele renderiza como ícone no app).
+        headers["Tags"] = ",".join(_latin1_safe(t) for t in tags)
 
     try:
         resp = requests.post(

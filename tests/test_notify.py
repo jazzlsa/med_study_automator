@@ -17,3 +17,29 @@ def test_sem_topic_nao_notifica(monkeypatch):
 def test_com_topic_configurado(monkeypatch):
     monkeypatch.setattr(settings.secrets, "NTFY_TOPIC", "teste-meucanal")
     assert is_configured() is True
+
+
+def test_emoji_no_titulo_nao_quebra_header(monkeypatch):
+    """Header HTTP vai como latin-1; emoji no título não pode estourar o POST
+    (bug real pego em produção: 'latin-1 codec can't encode character'\U0001f6a8)."""
+
+    class FakeResp:
+        def raise_for_status(self):
+            return None
+
+    captured = {}
+
+    def fake_post(url, *, data, headers, timeout):
+        captured["headers"] = headers
+        return FakeResp()
+
+    monkeypatch.setattr(settings.secrets, "NTFY_TOPIC", "teste-meucanal")
+    monkeypatch.setattr("utils.notify.requests.post", fake_post)
+
+    ok = send_notification("🚨 Título com acentos ção", "corpo", tags=["rotating_light"])
+    assert ok is True
+    # o header resultante tem que ser serializável em latin-1 (não estoura)
+    captured["headers"]["Title"].encode("latin-1")
+    assert "Título" in captured["headers"]["Title"]
+    assert "🚨" not in captured["headers"]["Title"]  # emoji fora, tag de ícone entra
+    assert captured["headers"]["Tags"] == "rotating_light"
