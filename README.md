@@ -97,8 +97,17 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
 venv\Scripts\python.exe -m pytest
 ```
 
-## Scripts legados (Windows)
+## Automação no Windows
 
-Antes da migração pro Raspberry Pi, a automação era montada com Tarefas Agendadas do
-Windows. Esses bootstrap scripts (`.bat`/`.vbs`/`.ps1`) foram movidos para `legacy/` e não
-fazem mais parte do pipeline ativo — mantidos apenas para referência/dev local.
+O pipeline diário roda no Raspberry Pi (timers systemd). No Windows, além do uso manual,
+há **Tarefas Agendadas** que ainda usam os scripts na raiz:
+
+| Tarefa | Script |
+|---|---|
+| `MedStudyAutomator_DailyPipeline` | `run_auto_pipeline.bat` (desabilitada — rodou no Pi) |
+| `MedStudyAutomator_AnkiSync` | `run_anki_sync_hidden.vbs` |
+| `MedStudyAutomator_NotebookLMRefresh` | `run_notebooklm_refresh_hidden.vbs` |
+
+Cuidado ao mover/renomear esses scripts: as tarefas apontam por **caminho absoluto**
+(`C:\Users\jessi\med_study_automator\...`) e quebram se você deslocá-los. O bootstrap
+dessas tarefas é feito por `scripts/setup_silent_tasks.ps1`.
