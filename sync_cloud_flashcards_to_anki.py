@@ -1,103 +1,167 @@
-"""Sincroniza pro Anki local (via AnkiConnect) os flashcards de aulas que já
-foram processadas com sucesso pelo pipeline na nuvem (Cloud Run Job), mas
-ainda não tiveram seus flashcards importados no Anki desta máquina.
+"""Importa pro Anki local (via AnkiConnect) os .apkg que já foram gerados pelo
+pipeline e sincronizados pra pasta local do Google Drive Desktop.
 
-Por quê isso existe: o Cloud Run não alcança o AnkiConnect (é um servidor
-HTTP em localhost:8765 na máquina da usuária) - core/anki_connect.py já
-documenta isso. Toda aula processada na nuvem gera e publica um .apkg no
-Drive normalmente (core/anki_flashcards.py + core/drive_sync.py), mas a
-importação "ao vivo" fica pendente até uma máquina com o Anki aberto rodar
-este script.
+MECANISMO (opção B - sem GCS):
+Antes, a "pendência" era lida de um banco compartilhado no GCS (resquício do
+Cloud Run) - que o pipeline deixou de alimentar quando migrou pro Raspberry Pi,
+então o AnkiSync parou de enxergar as aulas novas. Agora quem decide "o que
+espera pra importar" é observável e simples: os arquivos `.apkg` que já chegaram
+na pasta local do Drive Desktop (G:\\Meu Drive\\MedStudy_Flashcards\\...), baixada
+pelo próprio Google Drive Desktop, e que ainda não foram importados.
 
-NÃO reprocessa nada (não toca em Gemini/NotebookLM/Drive) - só importa,
-via AnkiConnect ('importPackage'), o .apkg que a aula já gerou. A mídia
-(imagens de slide) já vem embutida no .apkg, então isso funciona mesmo pra
-aulas processadas há dias, muito depois do container do Cloud Run daquela
-execução ter sido destruído.
-
-Lê e atualiza o MESMO banco (GCS) que o Cloud Run usa (config/credentials.json
-precisa ter sido dado acesso de leitura/escrita nesse bucket - ver
-database/db.py), marcando cada aula sincronizada em `anki_synced_at`. Roda de
-novo sem duplicar nada: aulas já marcadas não são tentadas de novo, e mesmo
-que fossem, o AnkiConnect já ignora notas duplicadas dentro do mesmo deck.
-
-Se o Anki não estiver aberto (ou o addon AnkiConnect não estiver instalado),
-sai silenciosamente sem erro - esse é o caso normal quando ninguém está
-usando o computador. Pensado pra rodar sozinho via Tarefa Agendada do
-Windows, de tempos em tempos (ex.: a cada 30 min), sem precisar do Anki
-aberto o tempo todo pra funcionar - só sincroniza quando encontra o Anki
-aberto numa dessas rodadas.
+- NÃO reprocessa nada (não toca em Gemini/NotebookLM/Drive): só importa via
+  AnkiConnect ('importPackage') o .apkg que ainda não foi importado.
+- A mídia (imagens de slide) já vem embutida no .apkg, então funciona mesmo pra
+  aulas processadas há dias.
+- O "já importado" fica num registro LOCAL (data/anki_imported_registry.json),
+  sem depender de banco na nuvem. Na primeira execução, o registro é SEMEADO a
+  partir do histórico de anki_synced_at do banco de cache local antigo, pra não
+  reimportar o que já foi importado na era GCS.
+- Se o Anki não estiver aberto (ou o addon AnkiConnect não estiver instalado),
+  sai silenciosamente sem erro - caso normal quando ninguém está usando a
+  máquina. Pensado pra rodar sozinho via Tarefa Agendada do Windows, de tempos
+  em tempos (ex.: a cada 30 min): só sincroniza quando encontra o Anki aberto.
 
 Uso manual: venv\\Scripts\\python.exe sync_cloud_flashcards_to_anki.py
 """
-import os
+import json
+import sqlite3
 import sys
+from datetime import datetime, timezone
+from pathlib import Path
 
-# Aponta pro MESMO bucket que o Cloud Run usa, mas num arquivo local
-# SEPARADO (nunca o data/med_automator.db "normal" desta máquina) - sem
-# isso, baixar o banco da nuvem aqui sobrescreveria qualquer registro de
-# processamento puramente local (ex.: uma aula rodada manualmente nesta
-# máquina que ainda não subiu pra nuvem), perdendo dado à toa.
-os.environ.setdefault("GOOGLE_APPLICATION_CREDENTIALS", "config/credentials.json")
-os.environ.setdefault("GCS_DB_BUCKET", "gen-lang-client-0055758379-medstudy-db")
-os.environ.setdefault("GCS_DB_BLOB", "med_automator.db")
-
+from config.settings import settings
 from core import anki_connect
-from core.drive_sync import DriveFolderScanner
 from core.orchestrator import _safe_filename
-from database.db import DatabaseManager
 from utils.logger import logger
+
+# Mesma localização usada pelo backend local (core/drive_sync.py) para publicar
+# os .apkg: pasta do Google Drive Desktop + nome da pasta de flashcards do semester.
+def _flashcards_root() -> Path:
+    return Path(r"G:\Meu Drive") / settings.semester.drive_flashcards_folder_name
+
+# Registro local de "já importado": mapeia caminho absoluto do .apkg -> timestamp ISO.
+# Fica em data/ (gitignored) - é estado operacional desta máquina, não do projeto.
+_REGISTRY_PATH = Path("data/anki_imported_registry.json")
+# Banco de cache local da ERA GCS - usado UMA vez, na primeira execução, só pra
+# semear o registro e não reimportar o que já foi importado antigamente.
+_LEGACY_CACHE_DB = Path("data/cloud_sync_cache.db")
+
+
+def _load_registry() -> dict:
+    if _REGISTRY_PATH.exists():
+        try:
+            data = json.loads(_REGISTRY_PATH.read_text("utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Registro de importação ilegível ({_REGISTRY_PATH}) - recomeçando: {e}")
+    return {}
+
+
+def _save_registry(registry: dict) -> None:
+    try:
+        _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _REGISTRY_PATH.write_text(
+            json.dumps(registry, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except OSError as e:
+        logger.error(f"Não consegui salvar o registro de importação ({_REGISTRY_PATH}): {e}")
+
+
+def _seed_registry_from_legacy(registry: dict) -> None:
+    """Primeira execução: marca como "já importado" tudo que o fluxo antigo (GCS)
+    já tinha sincronizado (anki_synced_at preenchido), pra não duplicar no Anki
+    quando o registro novo entra em vigor. Caminho esperado = mesmo padrão de
+    nome de arquivo usado na publicação."""
+    if _REGISTRY_PATH.exists():  # registro novo já existe - não re-semear
+        return
+    if not _LEGACY_CACHE_DB.exists():
+        return
+    root = _flashcards_root()
+    try:
+        con = sqlite3.connect(str(_LEGACY_CACHE_DB))
+        rows = con.execute(
+            "SELECT unit_code, lesson_name FROM completed_lessons "
+            "WHERE anki_synced_at IS NOT NULL"
+        ).fetchall()
+        con.close()
+    except sqlite3.Error as e:
+        logger.warning(f"Não consegui ler o histórico antigo pra semear o registro: {e}")
+        return
+
+    if not rows:
+        return
+    seeded = 0
+    for unit_code, lesson_name in rows:
+        expected = root / unit_code / f"{_safe_filename(lesson_name)}.apkg"
+        registry[str(expected)] = _now_iso()
+        seeded += 1
+    _save_registry(registry)
+    logger.info(
+        f"Registro de importação semeado a partir do histórico antigo: {seeded} aula(s) "
+        f"já tratada(s) como importadas (não serão reimportadas)."
+    )
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def run() -> int:
+    if not _REGISTRY_PATH.parent.exists():
+        _REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    registry = _load_registry()
+    _seed_registry_from_legacy(registry)
+
+    root = _flashcards_root()
+    if not root.exists():
+        logger.info(
+            f"Pasta do Drive Desktop não encontrada em '{root}' (Drive Desktop desligado ou "
+            f"não sincronizado?) - nada a fazer, saindo."
+        )
+        return 0
+
     if not anki_connect.is_available():
         logger.info("Anki/AnkiConnect não está acessível agora (Anki fechado?) - nada a fazer, saindo.")
         return 0
 
-    logger.info("Anki detectado e acessível - baixando o banco de dados compartilhado (GCS) pra conferir pendências...")
-    db = DatabaseManager(db_path="data/cloud_sync_cache.db")
-    pending = db.get_lessons_pending_anki_sync()
-
-    if not pending:
-        logger.info("Nenhuma aula pendente de sincronização com o Anki.")
+    apkg_files = sorted(root.rglob("*.apkg"))
+    if not apkg_files:
+        logger.info(f"Nenhum .apkg encontrado em '{root}'.")
         return 0
 
-    logger.info(f"{len(pending)} aula(s) concluída(s) na nuvem, pendente(s) de importar no Anki local...")
+    pending = [p for p in apkg_files if str(p) not in registry]
+    if not pending:
+        logger.info(f"Todos os {len(apkg_files)} .apkg já importados - nada a fazer.")
+        return 0
 
-    scanner = DriveFolderScanner()
+    logger.info(
+        f"{len(pending)} .apkg novo(s) pra importar (de {len(apkg_files)} no total) - sincronizando..."
+    )
+
     imported = 0
-    missing = 0
     failed = 0
-
-    for lesson in pending:
-        unit_code = lesson["unit_code"]
-        lesson_name = lesson["lesson_name"]
-        apkg_path = scanner.resolve_apkg_output_path(unit_code, _safe_filename(lesson_name))
-
-        if not apkg_path.exists():
-            logger.warning(
-                f"[{unit_code}] '{lesson_name}': .apkg esperado não encontrado em '{apkg_path}' "
-                f"(ainda sincronizando do Drive pro Google Drive Desktop? verifique de novo daqui a "
-                f"pouco) - pulando por enquanto, sem marcar como sincronizada."
-            )
-            missing += 1
-            continue
-
+    for apkg_path in pending:
         result = anki_connect.import_apkg_package(apkg_path)
         if result["success"] and result["available"]:
-            db.mark_anki_synced(unit_code, lesson_name)
+            registry[str(apkg_path)] = _now_iso()
             imported += 1
         elif not result["available"]:
             # Anki fechou entre o check inicial e agora - improvável mas possível;
-            # simplesmente para por aqui, tenta o resto na próxima execução.
-            logger.warning("Anki parou de responder no meio da sincronização - parando por aqui, tenta de novo na próxima execução.")
-            break
+            # para por aqui e tenta o resto na próxima execução (sem marcar nada).
+            logger.warning("Anki parou de responder no meio da sincronização - parando, retoma na próxima execução.")
+            _save_registry(registry)  # preserva o progresso até aqui
+            return 0
         else:
             failed += 1
+            logger.warning(f"Falha ao importar '{apkg_path.name}': {result['error']}")
 
+    _save_registry(registry)
     logger.info(
-        f"Sincronização com o Anki concluída: {imported} importada(s), "
-        f"{missing} .apkg ainda não encontrado(s), {failed} falha(s)."
+        f"Importação concluída: {imported} importado(s), {failed} com falha de AnkiConnect "
+        f"(não marcados - tentativa na próxima execução)."
     )
     return 0 if failed == 0 else 1
 

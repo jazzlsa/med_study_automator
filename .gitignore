@@ -17,6 +17,7 @@ config/drive_oauth_secrets.json
 # Banco de dados e dados locais
 database/*.db
 data/*.db
+data/anki_imported_registry.json
 data/raw/*
 data/processed/*
 data/temp/*
