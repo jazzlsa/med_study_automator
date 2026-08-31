@@ -51,6 +51,21 @@ def run() -> int:
         return 1
     logger.info("Autenticação do NotebookLM CLI OK - prosseguindo com o processamento.")
 
+    # Stop por orçamento do Gemini ANTES de começar: se a cota diária gratuita
+    # (GEMINI_FREE_TIER_DAILY_LIMIT, 20/dia) já foi atingida, não adianta iniciar
+    # a noite - cada aula falharia logo na primeira chamada real (a transcrição).
+    # Melhor abortar na hora, com aviso claro, do que queimar NotebookLM/Drive e
+    # o tempo da execução em tentativas que vão cair todas na mesma exceção.
+    from core.multimodal_processor import GEMINI_FREE_TIER_DAILY_LIMIT
+    gemini_used = db_manager.get_gemini_request_count_today()
+    if gemini_used >= GEMINI_FREE_TIER_DAILY_LIMIT:
+        logger.error("=" * 70)
+        logger.error(f"⚠️  ORÇAMENTO DIÁRIO DO GEMINI ATINGIDO: {gemini_used}/{GEMINI_FREE_TIER_DAILY_LIMIT} chamadas já usadas hoje.")
+        logger.error("⚠️  Abortando ANTES de processar qualquer aula - todas as transcrições falhariam.")
+        logger.error("⚠️  A cota gratuita é por dia UTC; volta amanhã, ou configure um plano/chave com cota maior.")
+        logger.error("=" * 70)
+        return 1
+
     new_lessons_found = 0
     succeeded: list = []
     failed: list = []  # list[(nome, motivo)]
