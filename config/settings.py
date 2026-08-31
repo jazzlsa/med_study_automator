@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Carrega variáveis do arquivo .env
 load_dotenv()
@@ -93,9 +93,9 @@ class EnvSecrets(BaseSettings):
                 except Exception:
                     pass
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Config declarativa (pydantic v2) - o estilo `class Config` foi deprecado e
+    # é removido no v3. `env_file`/`extra` se comportam igual ao antigo.
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @field_validator("*", mode="before")
     @classmethod
