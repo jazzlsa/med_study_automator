@@ -23,6 +23,11 @@ data/temp/*
 data/exports/*
 !data/**/.gitkeep
 
+# Flashcard .apkg e saídas geradas pelo pipeline - artefatos, não fonte
+*.apkg
+outputs/
+data/output/
+
 # Logs - operacionais, não devem ir pro histórico público
 logs/
 log_*.json

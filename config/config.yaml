@@ -26,26 +26,11 @@ semester:
     - "UC21 - TURMA B"
     - "UC24"
 
-database:
-  path: "database/lessons.db"
-
 storage:
   raw_dir: "data/raw"
   processed_dir: "data/processed"
   temp_dir: "data/temp"
   exports_dir: "data/exports"
-
-# Mapeamento de UCs e subdecks
-units:
-  UC01:
-    name: "Agressão e Defesa"
-    deck_name: "Medicina::UC01_Agressao_e_Defesa"
-  UC02:
-    name: "Sistema Nervoso e Órgãos dos Sentidos"
-    deck_name: "Medicina::UC02_Sistema_Nervoso"
-  UC03:
-    name: "Cardiovascular e Respiratório"
-    deck_name: "Medicina::UC03_Cardio_Respiratorio"
 
 # Regras para validação de flashcards
 flashcards:
