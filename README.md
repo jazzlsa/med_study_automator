@@ -70,6 +70,7 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
 | `GOOGLE_SPREADSHEET_ID` / `GOOGLE_CREDENTIALS_PATH` | para sync | Google Sheets / credenciais |
 | `GOOGLE_DRIVE_OAUTH_CLIENT_ID` / `_SECRET` / `_REFRESH_TOKEN` | para upload .apkg | OAuth da conta pessoal (gerado por `scripts/setup_drive_oauth.py`) |
 | `GCS_DB_BUCKET` | não | Persistência do banco via Cloud Storage (Cloud Run; vazio = local) |
+| `NTFY_TOPIC` | não | Alerta por push quando a noite falha (ver *Alerta por push*) |
 | `WHATSAPP_API_TOKEN` | — | (não usado ativamente) |
 
 **Credenciais nunca versionadas** (no `.gitignore`): `.env`, `config/credentials.json`,
@@ -88,6 +89,20 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
   histórico/commits sobre orçamento).
 - **Geração de flashcards:** `core/claude_client.py` + regras em `config.yaml > flashcards`
   (mín/máx cards por hora, tags permitidas, extração de imagem dos slides).
+
+---
+
+## Alerta por push
+
+Quando a execução noturna do `auto_pipeline.py` termina com **falhas**, ele manda um push
+de notificação (via [ntfy.sh](https://ntfy.sh)) se a env var `NTFY_TOPIC` estiver setada.
+
+1. Instale o app **ntfy** no celular e assine um tópico de sua escolha (ex.: `meus-medicaid`).
+2. Adicione no `.env` (Windows) / ambiente (Pi): `NTFY_TOPIC=meus-medicaid`.
+3. Pronto — uma falha por noite gera um push; se **todas** as falhas forem na criação do
+   NotebookLM (sintoma clássico de sessão expirada), o alerta vai com prioridade **urgente**.
+
+Sem `NTFY_TOPIC`, o pipeline se comporta exatamente como antes (nenhuma notificação).
 
 ---
 

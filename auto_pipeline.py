@@ -26,6 +26,7 @@ from core.notebooklm_client import notebooklm_client
 from core.orchestrator import orchestrator
 from database.db import db_manager
 from utils.logger import logger
+from utils.notify import send_notification, is_configured
 
 
 def run() -> int:
@@ -142,6 +143,32 @@ def run() -> int:
             logger.error("⚠️  Rode 'notebooklm login' manualmente para reautenticar, depois rode")
             logger.error("⚠️  este script de novo para reprocessar as aulas que falharam.")
             logger.error("=" * 70)
+
+        # Alerta por push (ntfy), se configurado. O retorno mais alto é saber de
+        # manhã que a noite falhou em vez de descobrir num log enterrado. O caso
+        # "todas falharam na criação do NotebookLM" vai com prioridade URGENTE,
+        # porque é sintoma clássico de autenticação expirada - que derruba a noite
+        # inteira de uma vez e passa despercebido se ninguém olhar.
+        if is_configured():
+            notify_lines = [f"[{name}] {reason}" for name, reason in failed]
+            notify_msg = "\n".join(notify_lines)
+            if len(notify_msg) > 900:  # limita pra não mandar um push gigante
+                notify_msg = notify_msg[:900] + "\n… (truncado)"
+
+            if len(notebook_creation_failures) == len(failed):
+                send_notification(
+                    title=f"🚨 Automator: {len(failed)} aula(s), provável sessão expirada",
+                    message=notify_msg,
+                    priority="urgent",
+                    tags=["rotating_light", "warning"],
+                )
+            else:
+                send_notification(
+                    title=f"⚠️ Automator: {len(failed)} aula(s) falharam na noite",
+                    message=notify_msg,
+                    priority="default",
+                    tags=["rotating_light"],
+                )
 
     logger.info("=" * 70)
     return 0 if not failed else 1

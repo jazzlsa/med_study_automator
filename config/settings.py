@@ -62,6 +62,11 @@ class EnvSecrets(BaseSettings):
     GOOGLE_SPREADSHEET_ID: Optional[str] = None
     WHATSAPP_API_TOKEN: Optional[str] = None
 
+    # Alerta por push quando o pipeline noturno falha (ntfy.sh). Basta o nome do
+    # tópico - instale o app ntfy no celular e assine o mesmo tópico. Vazio = sem
+    # notificação (comportamento de antes). Auto-preenchido como $NTFY_TOPIC.
+    NTFY_TOPIC: Optional[str] = None
+
     # Upload do .apkg de flashcards pro Drive via OAuth da conta pessoal (não a
     # service account, que não tem cota própria em "Meu Drive") - ver
     # core/drive_api.py. Gerados uma vez por scripts/setup_drive_oauth.py.
