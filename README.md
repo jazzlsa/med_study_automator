@@ -94,13 +94,19 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
 
 ## Alerta por push
 
-Quando a execução noturna do `auto_pipeline.py` termina com **falhas**, ele manda um push
-de notificação (via [ntfy.sh](https://ntfy.sh)) se a env var `NTFY_TOPIC` estiver setada.
+A execução do `auto_pipeline.py` manda um push de notificação (via [ntfy.sh](https://ntfy.sh))
+se a env var `NTFY_TOPIC` estiver setada. Dois tipos:
 
-1. Instale o app **ntfy** no celular e assine um tópico de sua escolha (ex.: `meus-medicaid`).
-2. Adicione no `.env` (Windows) / ambiente (Pi): `NTFY_TOPIC=meus-medicaid`.
-3. Pronto — uma falha por noite gera um push; se **todas** as falhas forem na criação do
-   NotebookLM (sintoma clássico de sessão expirada), o alerta vai com prioridade **urgente**.
+- **Sucesso:** cada aula concluída com sucesso (novo notebook na planilha +
+  flashcards gerados) gera um push avisando **qual aula**. Tag `white_check_mark`.
+- **Falha:** ao final, se houver falhas, um push com a lista do que falhou. Se
+  **todas** as falhas forem na criação do NotebookLM (sintoma de sessão expirada),
+  vai com prioridade **urgente**.
+
+Para ativar:
+1. Instale o app **ntfy** no celular e assine um tópico (ex.: `meus-medicaid`).
+2. Adicione `NTFY_TOPIC=meus-medicaid` no `.env` (Windows) / no ambiente do Pi.
+3. Pronto.
 
 Sem `NTFY_TOPIC`, o pipeline se comporta exatamente como antes (nenhuma notificação).
 

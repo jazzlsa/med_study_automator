@@ -124,6 +124,16 @@ def run() -> int:
             label = f"[{unit_code}] {lesson_name}"
             if success:
                 succeeded.append(label)
+                # Notificação de SUCESSO (além das de falha): avisa qual aula foi
+                # processada por completo - novo notebook na planilha + flashcards
+                # gerados. Funciona em complemento ao alerta de falha; sem
+                # NTFY_TOPIC é no-op (send_notification já cuida disso).
+                send_notification(
+                    title=f"✅ Aula concluída: {lesson_name}",
+                    message=f"[{unit_code}] {lesson_name}\nNotebook criado e flashcards gerados com sucesso.",
+                    priority="default",
+                    tags=["white_check_mark"],
+                )
             else:
                 status_row = db_manager.get_lesson_status(unit_code, lesson_name)
                 reason = (

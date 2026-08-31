@@ -35,3 +35,36 @@ def test_com_folga_prossegue_sem_aulas(monkeypatch):
     monkeypatch.setattr(auto_pipeline.drive_sync, "scan_local_lessons", lambda unit_code: [])
 
     assert auto_pipeline.run() == 0
+
+
+def test_aula_com_sucesso_dispara_notificacao_com_nome(monkeypatch):
+    """Uma aula concluída com sucesso gera um push avisando QUAL aula - não só
+    os de falha."""
+    _mock_auth_ok(monkeypatch)
+    monkeypatch.setattr(auto_pipeline.db_manager, "get_gemini_request_count_today", lambda: 0)
+    monkeypatch.setattr(
+        auto_pipeline.db_manager, "is_lesson_completed", lambda uc, name: False,
+    )
+    monkeypatch.setattr(auto_pipeline.orchestrator, "process_lesson", lambda **kw: True)
+
+    first = [True]
+    lesson = {"lesson_title": "Aula Sucesso", "folder_path": "/x", "audio": "/x/a.mp3"}
+
+    def fake_scan(unit_code):
+        if first[0]:
+            first[0] = False
+            return [lesson]
+        return []
+
+    monkeypatch.setattr(auto_pipeline.drive_sync, "scan_local_lessons", fake_scan)
+
+    notifs = []
+
+    def fake_send(title, message, priority="default", tags=None):
+        notifs.append((title, message))
+
+    monkeypatch.setattr(auto_pipeline, "send_notification", fake_send)
+
+    assert auto_pipeline.run() == 0
+    # Algum push de sucesso foi disparado e menciona a aula concluída.
+    assert any("Aula Sucesso" in t for t, _ in notifs)
