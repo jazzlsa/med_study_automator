@@ -14,28 +14,22 @@ def test_hash_generation(tmp_path):
 
 
 def test_save_and_retrieve_lesson(tmp_path):
-    """Testa persistência e busca de aula por hash e identificadores."""
+    """Testa persistência e busca de aula na tabela completed_lessons."""
     db_file = tmp_path / "test.db"
-    db_mgr = DatabaseManager(db_path=db_file)
+    db_mgr = DatabaseManager(db_path=str(db_file))
 
-    sample_slide = tmp_path / "slide.pdf"
-    sample_slide.write_text("Slide content mock", encoding="utf-8")
-
-    c_hash = compute_content_hash(sample_slide)
-    lesson_id = db_mgr.save_lesson(
+    db_mgr.mark_lesson_completed(
         unit_code="UC01",
         lesson_name="Aula_Teste_Imunologia",
-        content_hash=c_hash,
-        cards_count=20,
+        notebook_id="test_notebook_123",
+        status="success",
+        details="Processada com sucesso",
     )
-    assert lesson_id is not None
 
-    lesson = db_mgr.get_lesson_by_hash(c_hash)
-    assert lesson is not None
-    assert lesson["unit_code"] == "UC01"
-    assert lesson["cards_count"] == 20
+    assert db_mgr.is_lesson_completed("UC01", "Aula_Teste_Imunologia") is True
 
-    # Teste de Rollback / Deleção
-    deleted = db_mgr.delete_lesson("UC01", "Aula_Teste_Imunologia")
-    assert deleted is True
-    assert db_mgr.get_lesson_by_hash(c_hash) is None
+    status = db_mgr.get_lesson_status("UC01", "Aula_Teste_Imunologia")
+    assert status is not None
+    assert status["lesson_name"] == "Aula_Teste_Imunologia"
+    assert status["notebook_id"] == "test_notebook_123"
+    assert status["status"] == "success"

@@ -587,6 +587,31 @@ class MultimodalProcessor:
         ]
         existing_block = "\n".join(f"- {q}" for q in existing_questions) or "(nenhum flashcard existe ainda para esta aula)"
 
+        # Prioridade 1: Gerar flashcards adicionais com Claude (se disponível)
+        from core.claude_client import claude_client
+        if claude_client.is_available():
+            try:
+                slide_files = list(lesson_folder.glob("*.pdf")) + list(lesson_folder.glob("*.pptx"))
+                claude_res = claude_client.generate_flashcards(
+                    lesson_name=lesson_name,
+                    unit_code=unit_code,
+                    transcript=transcript,
+                    slide_paths=slide_files,
+                    min_cards=quantity,
+                    existing_cards=existing_flashcards,
+                )
+                if claude_res["success"] and claude_res["flashcards"]:
+                    new_flashcards = claude_res["flashcards"]
+                    logger.info(f"{len(new_flashcards)} flashcards adicionais gerados via Claude ({claude_res.get('model_used')}).")
+                    self._enrich_flashcards_with_videos(new_flashcards)
+                    all_flashcards = existing_flashcards + new_flashcards
+                    flashcards_json_path.write_text(
+                        json.dumps(all_flashcards, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    return {"success": True, "new_flashcards": new_flashcards, "all_flashcards": all_flashcards, "error": None}
+            except Exception as ce:
+                logger.warning(f"Geração de flashcards adicionais via Claude falhou ({ce}) - tentando Gemini como fallback.")
+
         prompt = f"""
         Você é um médico especialista e professor sênior.
         Gere EXATAMENTE {quantity} flashcards NOVOS de alto rendimento para a aula

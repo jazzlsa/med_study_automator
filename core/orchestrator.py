@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 from typing import List, Union, Optional, Any
 from core.multimodal_processor import multimodal_processor
+from core.claude_client import claude_client
 from core.notebooklm_client import notebooklm_client
 from core.sheets_client import sheets_client
 from core.anki_flashcards import build_flashcards_apkg
@@ -133,10 +134,44 @@ class Orchestrator:
                     "o NotebookLM será criado só com slide e áudio, sem a fonte extra da transcrição."
                 )
 
-            # 2.5. Gera o .apkg de flashcards (Múltipla Escolha/Verdadeiro ou Falso,
-            # mesmos note types do Anki do usuário) e salva no Drive. Independente do
-            # NotebookLM - falha aqui não trava o resto do pipeline, só loga.
-            flashcards = gemini_result.get("flashcards") or []
+            # 2.5. Geração dos Flashcards de Alto Rendimento
+            # Prioridade 1: Claude (Anthropic) com base na transcrição literal e slides
+            # Prioridade 2: Fallback para os flashcards do Gemini
+            flashcards = []
+            transcript_text = ""
+            if transcript_path and Path(transcript_path).exists():
+                try:
+                    transcript_text = Path(transcript_path).read_text(encoding="utf-8")
+                except Exception as te:
+                    logger.warning(f"Não foi possível ler o arquivo de transcrição '{transcript_path}': {te}")
+            elif gemini_result.get("transcript"):
+                transcript_text = gemini_result.get("transcript")
+
+            if transcript_text or slides:
+                logger.info("Solicitando geração de flashcards médicos ao Claude...")
+                claude_res = claude_client.generate_flashcards(
+                    lesson_name=lesson_name,
+                    unit_code=unit_code,
+                    transcript=transcript_text,
+                    slide_paths=slides,
+                )
+                if claude_res["success"] and claude_res["flashcards"]:
+                    flashcards = claude_res["flashcards"]
+                    logger.info(f"Flashcards gerados com sucesso pelo Claude ({claude_res.get('model_used')}).")
+                    # Enriquece com vídeos educativos no YouTube se necessário
+                    try:
+                        multimodal_processor._enrich_flashcards_with_videos(flashcards)
+                    except Exception as ve:
+                        logger.warning(f"Enriquecimento com vídeos falhou (não-crítico): {ve}")
+                else:
+                    logger.warning(
+                        f"Geração via Claude não foi possível ({claude_res.get('error')}) - "
+                        "utilizando flashcards do Gemini como fallback."
+                    )
+                    flashcards = gemini_result.get("flashcards") or []
+            else:
+                flashcards = gemini_result.get("flashcards") or []
+
             if flashcards:
                 apkg_path = drive_sync.resolve_apkg_output_path(unit_code, _safe_filename(lesson_name))
                 apkg_result = build_flashcards_apkg(flashcards, unit_code, lesson_name, apkg_path)
@@ -166,7 +201,7 @@ class Orchestrator:
                 if anki_sync_result["available"] and not anki_sync_result["success"]:
                     step_failures.append(f"sincronização com o Anki ({anki_sync_result['error']})")
             elif gemini_result.get("success"):
-                logger.warning("Gemini não retornou nenhum flashcard para esta aula - .apkg não foi gerado.")
+                logger.warning("Nenhum flashcard gerado (Claude e Gemini) para esta aula - .apkg não foi gerado.")
 
             if create_result["success"]:
                 # 3. Injeta as fontes no NotebookLM de uma vez (slide + transcrição

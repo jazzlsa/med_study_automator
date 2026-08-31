@@ -25,7 +25,7 @@ if (Test-Path "$projectDir\config\drive_oauth_secrets.json") {
 }
 
 # 2. Copiar tokens de autenticação do NotebookLM
-Write-Host "2/3 Copiando sessao do NotebookLM..." -ForegroundColor Yellow
+Write-Host "2/4 Copiando sessao do NotebookLM..." -ForegroundColor Yellow
 $nlmDir = "$env:USERPROFILE\.notebooklm"
 if (Test-Path "$nlmDir\config.json") {
     scp -i "$sshKey" -o StrictHostKeyChecking=no "$nlmDir\config.json" "${piUser}@${piHost}:~/.notebooklm/config.json"
@@ -40,4 +40,16 @@ if (Test-Path "$nlmProfileDir") {
     }
 }
 
-Write-Host "3/3 Concluído com sucesso! Todas as credenciais foram enviadas ao Raspberry Pi." -ForegroundColor Green
+# 3. Copiar configuração e sessão do Claude Code
+Write-Host "3/4 Copiando configuracao e sessao do Claude Code..." -ForegroundColor Yellow
+if (Test-Path "$env:USERPROFILE\.claude.json") {
+    scp -i "$sshKey" -o StrictHostKeyChecking=no "$env:USERPROFILE\.claude.json" "${piUser}@${piHost}:~/.claude.json"
+}
+if (Test-Path "$env:USERPROFILE\.claude") {
+    ssh -i "$sshKey" -o StrictHostKeyChecking=no "${piUser}@${piHost}" "mkdir -p ~/.claude"
+    if (Test-Path "$env:USERPROFILE\.claude\settings.json") {
+        scp -i "$sshKey" -o StrictHostKeyChecking=no "$env:USERPROFILE\.claude\settings.json" "${piUser}@${piHost}:~/.claude/settings.json"
+    }
+}
+
+Write-Host "4/4 Concluído com sucesso! Todas as credenciais foram enviadas ao Raspberry Pi." -ForegroundColor Green

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Dict, Any
 import pymupdf as fitz
 from config.settings import settings
 from utils.logger import logger
@@ -75,6 +75,29 @@ class SlideExtractor:
             doc.close()
 
         return output_file
+
+    def extract_slide_text_by_page(self, pdf_path: Path) -> List[Dict[str, Any]]:
+        """Extrai o texto estruturado de cada página (slide) do PDF com o número da página (1-based).
+        Usado para passar o conteúdo e estrutura exatos de cada slide ao Claude."""
+        pdf_path = Path(pdf_path)
+        if not pdf_path.exists():
+            return []
+
+        doc = fitz.open(pdf_path)
+        pages_data: List[Dict[str, Any]] = []
+        try:
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                text = page.get_text("text").strip()
+                pages_data.append({
+                    "page_number": page_num + 1,
+                    "text": text,
+                    "has_images": len(page.get_images(full=True)) > 0,
+                })
+        finally:
+            doc.close()
+
+        return pages_data
 
 
 slide_extractor = SlideExtractor()
