@@ -37,6 +37,33 @@ def test_com_folga_prossegue_sem_aulas(monkeypatch):
     assert auto_pipeline.run() == 0
 
 
+def test_lock_ocupado_aborta_sem_processar(monkeypatch):
+    """Se já há uma execução em andamento (lock ocupado), esta aborta antes de
+    varrer qualquer aula - evita reprocessamento e pushes duplicados."""
+
+    class FakeLockHeld:
+        def __init__(self, path):
+            pass
+
+        def acquire(self):
+            return False  # outra execução segura o lock
+
+        def release(self):
+            pass
+
+    _mock_auth_ok(monkeypatch)
+    monkeypatch.setattr(auto_pipeline.db_manager, "get_gemini_request_count_today", lambda: 0)
+    monkeypatch.setattr(auto_pipeline, "RunLock", FakeLockHeld)
+    scanned = [0]
+    monkeypatch.setattr(
+        auto_pipeline.drive_sync, "scan_local_lessons",
+        lambda unit_code: scanned.__setitem__(0, scanned[0] + 1) or [],
+    )
+
+    assert auto_pipeline.run() == 0
+    assert scanned[0] == 0  # nada foi varrido
+
+
 def test_aula_com_sucesso_dispara_notificacao_com_nome(monkeypatch):
     """Uma aula concluída com sucesso gera um push avisando QUAL aula - não só
     os de falha."""

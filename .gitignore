@@ -18,6 +18,7 @@ config/drive_oauth_secrets.json
 database/*.db
 data/*.db
 data/anki_imported_registry.json
+data/pipeline.lock
 data/raw/*
 data/processed/*
 data/temp/*

@@ -19,6 +19,7 @@ lista separada por vírgula antes de rodar, ex.:
 """
 import os
 import sys
+from pathlib import Path
 
 from core.sheets_sync import AVAILABLE_UCS
 from core.drive_sync import drive_sync
@@ -27,6 +28,7 @@ from core.orchestrator import orchestrator
 from database.db import db_manager
 from utils.logger import logger
 from utils.notify import send_notification, is_configured
+from utils.runlock import RunLock
 
 
 def run() -> int:
@@ -65,6 +67,16 @@ def run() -> int:
         logger.error("⚠️  A cota gratuita é por dia UTC; volta amanhã, ou configure um plano/chave com cota maior.")
         logger.error("=" * 70)
         return 1
+
+    # Lock de execução única: garante que só UMA rodada processe aulas por vez
+    # (ex.: tarefa agendada + execução manual ao mesmo tempo). Quem perder o lock
+    # aborta aqui, sem processar nada e sem gerar pushes duplicados. Se um
+    # processo anterior morreu e deixou o lock pra trás, o RunLock considera
+    # stale após um tempo e assume - não trava a noite pra sempre.
+    lock = RunLock(Path("data/pipeline.lock"))
+    if not lock.acquire():
+        logger.warning("Outra execução do pipeline já está em andamento (lock de execução única) - esta rodada aborta.")
+        return 0
 
     new_lessons_found = 0
     succeeded: list = []
@@ -196,6 +208,9 @@ def run() -> int:
                 )
 
     logger.info("=" * 70)
+
+    # Libera o lock antes de sair - a próxima execução pode rodar de novo.
+    lock.release()
     return 0 if not failed else 1
 
 
