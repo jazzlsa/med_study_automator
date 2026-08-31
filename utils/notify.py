@@ -53,13 +53,17 @@ def send_notification(
     headers = {
         # Título/headers vão como latin-1 (limitação do http.client) - emoji do
         # título é removido aqui e os ícones de severidade entram pelo `Tags`.
-        "Title": _latin1_safe(title),
+        # O `.strip()` é obrigatório: remover o emoji do início deixa um espaço
+        # residual ("✅ Aula..." vira " Aula..."), e o http.client do Python 3.13+
+        # REJEITA header cujo valor começa/termina com espaço ('Invalid leading
+        # whitespace...') - bug real que derrubou a notificação de sucesso no Pi.
+        "Title": _latin1_safe(title).strip(),
         "Priority": priority,
     }
     if tags:
         # ntfy aceita tags separadas por vírgula no header (códigos ASCII como
         # "rotating_light" que ele renderiza como ícone no app).
-        headers["Tags"] = ",".join(_latin1_safe(t) for t in tags)
+        headers["Tags"] = ",".join(_latin1_safe(t).strip() for t in tags)
 
     try:
         resp = requests.post(
