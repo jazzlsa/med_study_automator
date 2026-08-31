@@ -69,8 +69,7 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
 | `ANKI_CONNECT_URL` | não | Padrão `http://localhost:8765` |
 | `GOOGLE_SPREADSHEET_ID` / `GOOGLE_CREDENTIALS_PATH` | para sync | Google Sheets / credenciais |
 | `GOOGLE_DRIVE_OAUTH_CLIENT_ID` / `_SECRET` / `_REFRESH_TOKEN` | para upload .apkg | OAuth da conta pessoal (gerado por `scripts/setup_drive_oauth.py`) |
-| `GCS_DB_BUCKET` | não | Persistência do banco via Cloud Storage (Cloud Run; vazio = local) |
-| `NTFY_TOPIC` | não | Alerta por push quando a noite falha (ver *Alerta por push*) |
+| `NTFY_TOPIC` | não | Alerta por push quando a noite falha ou uma aula conclui (ver *Alerta por push*) |
 | `WHATSAPP_API_TOKEN` | — | (não usado ativamente) |
 
 **Credenciais nunca versionadas** (no `.gitignore`): `.env`, `config/credentials.json`,

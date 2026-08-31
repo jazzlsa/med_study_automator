@@ -1,4 +1,3 @@
-import os
 import sqlite3
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -7,67 +6,15 @@ from utils.logger import logger
 class DatabaseManager:
     """Gerencia o banco de dados SQLite local para controle de aulas processadas.
 
-    Cloud Run Jobs não tem disco persistente entre execuções - cada rodada começa
-    com um filesystem novo. Se a env var GCS_DB_BUCKET estiver configurada, este
-    banco é baixado de um bucket do Cloud Storage na inicialização e reenviado
-    de volta depois de cada gravação, pra não perder o controle de "aula já
-    processada" entre uma execução e a próxima. Sem essa env var (uso local, no
-    Windows), o comportamento é 100% o mesmo de sempre: só o arquivo local."""
+    Banco puramente local (padrão data/med_automator.db) - cada máquina guarda o
+    seu: o Raspberry Pi mantém o dele (produção) e este Windows o de dev. Não há
+    mais sincronização via GCS (essa era uma gambiarra do Cloud Run, removida
+    quando o pipeline migrou pro Pi com disco persistente)."""
 
     def __init__(self, db_path: str = "data/med_automator.db"):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._gcs_bucket_name = os.environ.get("GCS_DB_BUCKET")
-        self._gcs_blob_name = os.environ.get("GCS_DB_BLOB", self.db_path.name)
-        self._download_db_from_gcs()
         self._init_db()
-
-    def _get_gcs_bucket(self):
-        """Lazy: só importa google-cloud-storage se GCS_DB_BUCKET estiver configurado
-        (dependência opcional, não precisa estar instalada pra uso local)."""
-        if not self._gcs_bucket_name:
-            return None
-        try:
-            from google.cloud import storage
-        except ImportError:
-            logger.warning("GCS_DB_BUCKET configurado mas google-cloud-storage não está instalado - ignorando.")
-            return None
-        try:
-            client = storage.Client()
-            return client.bucket(self._gcs_bucket_name)
-        except Exception as e:
-            logger.error(f"Falha ao conectar no bucket GCS '{self._gcs_bucket_name}': {e}")
-            return None
-
-    def _download_db_from_gcs(self) -> None:
-        """Baixa o .db do bucket ANTES de abrir a conexão, se existir um lá (roda
-        uma vez, no __init__). Se o blob ainda não existir (primeira execução),
-        segue com um banco local novo - _init_db cria as tabelas normalmente."""
-        bucket = self._get_gcs_bucket()
-        if not bucket:
-            return
-        blob = bucket.blob(self._gcs_blob_name)
-        try:
-            if blob.exists():
-                blob.download_to_filename(str(self.db_path))
-                logger.info(f"Banco de dados baixado do GCS: gs://{self._gcs_bucket_name}/{self._gcs_blob_name}")
-            else:
-                logger.info(f"Nenhum banco de dados encontrado ainda em gs://{self._gcs_bucket_name}/{self._gcs_blob_name} - começando do zero.")
-        except Exception as e:
-            logger.error(f"Falha ao baixar o banco de dados do GCS (seguindo com o estado local): {e}")
-
-    def _upload_db_to_gcs(self) -> None:
-        """Sobe o .db pro bucket depois de cada gravação bem-sucedida - mantém a
-        cópia remota sempre atualizada por aula, não só no fim da execução (se o
-        job cair no meio, as aulas já gravadas até ali não se perdem)."""
-        bucket = self._get_gcs_bucket()
-        if not bucket:
-            return
-        try:
-            blob = bucket.blob(self._gcs_blob_name)
-            blob.upload_from_filename(str(self.db_path))
-        except Exception as e:
-            logger.error(f"Falha ao subir o banco de dados pro GCS: {e}")
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -135,7 +82,6 @@ class DatabaseManager:
                 """, (unit_code, lesson_name, notebook_id, status, details))
                 conn.commit()
             logger.info(f"Aula {lesson_name} salva no banco de dados local (status={status}).")
-            self._upload_db_to_gcs()
         except Exception as e:
             logger.error(f"Erro ao salvar aula no banco de dados: {e}")
 
@@ -197,10 +143,11 @@ class DatabaseManager:
 
     def get_lessons_pending_anki_sync(self) -> List[Dict[str, Any]]:
         """Aulas concluídas com sucesso (em QUALQUER unidade) que ainda não foram
-        importadas no Anki desta máquina via AnkiConnect - usado pelo script
-        sync_cloud_flashcards_to_anki.py (aulas processadas pelo Cloud Run não
-        chegam ao Anki na hora, porque o container não alcança o localhost da
-        usuária; esse script tardio fecha essa lacuna quando roda localmente)."""
+        importadas no Anki desta máquina via AnkiConnect.
+
+        (Método do fluxo antigo, que lia a "pendência" de um banco compartilhado;
+        o sync Anki atual - sync_cloud_flashcards_to_anki.py - varre a pasta do
+        Drive Desktop e não depende mais de pendência de banco.)"""
         lessons = []
         try:
             with self._get_connection() as conn:
@@ -233,7 +180,6 @@ class DatabaseManager:
                 """, (unit_code, lesson_name))
                 conn.commit()
             logger.info(f"Aula {lesson_name} marcada como sincronizada com o Anki.")
-            self._upload_db_to_gcs()
         except Exception as e:
             logger.error(f"Erro ao marcar aula {lesson_name} como sincronizada com o Anki: {e}")
 
@@ -275,7 +221,6 @@ class DatabaseManager:
                     "SELECT request_count FROM gemini_daily_usage WHERE usage_date = ?", (today,)
                 ).fetchone()["request_count"]
                 conn.commit()
-            self._upload_db_to_gcs()
             return new_count
         except Exception as e:
             logger.error(f"Erro ao registrar requisição do Gemini de hoje: {e}")
