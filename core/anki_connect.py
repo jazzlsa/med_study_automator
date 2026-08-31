@@ -61,19 +61,20 @@ def _invoke(action: str, **params: Any) -> Dict[str, Any]:
     return body["result"]
 
 
-# Hierarquia fixa pedida pela usuária: Medicina > Segundo Ano > <UC> > <aula>.
-# Substituiu duas tentativas anteriores (primeiro "Medicina::<UC>::<aula>" sem
-# ano, depois "casar com um deck já existente da usuária tipo Faculdade::2º
-# Ano::UC05 - Respiratório") - manter só essa, sem lógica de auto-detecção, é
-# o que a usuária pediu explicitamente por último.
-DECK_ROOT = "Medicina"
-DECK_ANO = "Segundo Ano"
+# Hierarquia "<root>::<ano>::<UC>::<aula>", configurável via config.yaml (bloco
+# `app`: anki_root_deck + anki_ano_deck) - o valor padrão é "Medicina::Segundo
+# Ano", que foi o que a usuária pediu explicitamente por último (substituiu duas
+# tentativas anteriores: "Medicina::<UC>::<aula>" sem ano, e "casar com um deck
+# existente tipo Faculdade::2º Ano::UC05"). Sem lógica de auto-detecção, e sem
+# valor hardcoded: a raiz/ano mudam na config sem tocar em código.
 
 
 def _resolve_deck_name(unit_code: str, lesson_name: str) -> str:
-    """Monta "Medicina::Segundo Ano::<UC>::<aula>" - hierarquia fixa, sem
-    depender de decks pré-existentes da usuária."""
-    return f"{DECK_ROOT}::{DECK_ANO}::{unit_code}::{lesson_name}"
+    """Monta "<anki_root_deck>::<anki_ano_deck>::<UC>::<aula>" a partir da
+    config (config.yaml > app) - tem que bater com a hierarquia do .apkg."""
+    root = settings.app.anki_root_deck
+    ano = settings.app.anki_ano_deck
+    return f"{root}::{ano}::{unit_code}::{lesson_name}"
 
 
 def is_available() -> bool:

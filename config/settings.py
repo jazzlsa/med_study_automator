@@ -14,7 +14,12 @@ class AppConfig(BaseModel):
     name: str = "MedStudyAutomator"
     version: str = "1.0.0"
     log_level: str = "INFO"
+    # Raiz e "ano" do deck do Anki - hierarquia genérica
+    # "<root>::<ano>::<UC>::<aula>". Editáveis aqui (config), sem mexer em código;
+    # usados tanto pelo .apkg (core/anki_flashcards.py) quanto pelo sync ao vivo
+    # (core/anki_connect.py) pra manter os dois lados no mesmo deck.
     anki_root_deck: str = "Medicina"
+    anki_ano_deck: str = "Segundo Ano"
 
 
 class DatabaseConfig(BaseModel):

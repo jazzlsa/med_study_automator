@@ -3,6 +3,7 @@ app:
   version: "1.0.0"
   log_level: "INFO"
   anki_root_deck: "Medicina"
+  anki_ano_deck: "Segundo Ano"
 
 # Tudo que muda de semestre pra semestre (planilha nova, pastas novas do Drive,
 # lista de UCs cursadas) fica centralizado aqui - editável pela aba "⚙️

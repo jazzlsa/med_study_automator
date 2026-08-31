@@ -85,6 +85,9 @@ Copie de um `.env` existente ou crie um na raiz. As chaves usadas estão em
   editável pela aba Configurações do `app.py`.
 - **Banco:** `database/lessons.db` (config) vs `data/med_automator.db` (real, usado pelo
   `db.py`). A regra atual é: o banco vivo é `data/med_automator.db`.
+- **Deck do Anki:** hierarquia `<root>::<ano>::<UC>::<aula>`, configurável em `config.yaml
+  > app` (`anki_root_deck`, `anki_ano_deck`; padrões `Medicina` / `Segundo Ano`). Usada da
+  mesma forma pelo `.apkg` e pelo sync ao vivo, pra não caírem em decks diferentes.
 - **Orçamento do Gemini:** o pipeline respeita o limite diário da API gratuita (ver
   histórico/commits sobre orçamento).
 - **Geração de flashcards:** `core/claude_client.py` + regras em `config.yaml > flashcards`
