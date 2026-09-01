@@ -519,6 +519,38 @@ class NotebookLMClient:
         all_success = all(r["success"] for r in per_source_results)
         return {"success": all_success, "sources": per_source_results}
 
+    def get_audio_source_guides(self, notebook_id: str, audio_titles: List[str]) -> List[str]:
+        """Retorna o texto do 'Source Guide' (o resumo + keywords que o PRÓPRIO
+        NotebookLM gera autonomamente pra cada fonte) das fontes de áudio da aula.
+
+        Usado no caminho "áudio-primeiro" (orchestrator): quando o NotebookLM
+        ingeriu o áudio direto (sem transcrição via Gemini - confirmado por teste
+        em 2026-08-31 que o Pi, IP residencial, ingere áudio normalmente; o
+        bloqueio de "IP de datacenter" era herança do Cloud Run), o guia dele vira
+        o insumo de texto pro Claude gerar os flashcards (junto com os slides) -
+        sem gastar NENHUMA chamada da cota do Gemini.
+
+        Recebe os nomes/títulos das fontes de áudio e devolve só os summaries dos
+        guias que existirem e estiverem prontos (vazio se nenhum). "Audio" aqui = a
+        fonte cujo título é o nome do arquivo de áudio adicionado."""
+        if not audio_titles:
+            return []
+        wanted = {t for t in audio_titles if t}
+        result = self._run_cli(["source", "list", "-n", notebook_id], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
+        if not result["success"]:
+            logger.warning(f"Não consegui listar fontes pra buscar os guias de áudio do notebook {notebook_id}: {result['error']}")
+            return []
+        summaries = []
+        for s in (result["data"] or {}).get("sources", []):
+            if s.get("status") != "ready" or s.get("title") not in wanted:
+                continue
+            g = self._run_cli(["source", "guide", s["id"], "-n", notebook_id], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
+            if g["success"] and (g["data"] or {}).get("summary"):
+                summaries.append(g["data"]["summary"].strip())
+            elif not g["success"]:
+                logger.warning(f"Falha ao buscar o guide da fonte '{s.get('title')}': {g['error']}")
+        return summaries
+
     def generate_studio_artifacts(self, notebook_id: str, skip_types: Optional[set] = None) -> Dict[str, Any]:
         """Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards difícil/mais,
         teste difícil/mais, slides, vídeo, infográfico, tabela de dados e mapa mental)
