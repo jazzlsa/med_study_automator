@@ -59,16 +59,20 @@ class Orchestrator:
 
             # --- Roteamento: caminho normal (Gemini) vs "áudio-primeiro" ---
             is_cloud = os.environ.get("STORAGE_BACKEND", "local").strip().lower() == "cloud"
-            # Áudio-primeiro: quando há áudio e rodamos LOCAL/Pi (não-cloud), o NotebookLM
-            # ingere o áudio direto (testado em 2026-08-31 que o Pi, IP residencial, ingere -
-            # o bloqueio de "IP de datacenter" era herança do Cloud Run). Nesse caso o texto
-            # dos flashcards vem do Source Guide que o PRÓPRIO NotebookLM gera pra cada fonte
-            # de áudio (junto com os slides), sem gastar NENHUMA chamada da cota do Gemini na
-            # transcrição. Só vale com notebook criado/reaproveitado com sucesso; se o guia
-            # não vier (fontes não prontas ou guia vazio), cai pro Gemini como fallback, pra
-            # nunca perder a aula. Cloud continua mandando só a transcrição do Gemini (lá o
-            # áudio não processa, bug conhecido).
-            audio_first = bool(audios) and not is_cloud
+            # Áudio-primeiro: ativa SEMPRE que houver áudio. O NotebookLM ingere o áudio
+            # direto (testado em 2026-08-31 que o Pi, IP residencial, ingere - o bloqueio de
+            # "IP de datacenter" era herança do Cloud Run, que já saiu do código). Nesse caso
+            # o texto dos flashcards vem do Source Guide que o PRÓPRIO NotebookLM gera pra cada
+            # fonte de áudio (junto com os slides), sem gastar NENHUMA chamada da cota do
+            # Gemini na transcrição. Só vale com notebook criado/reaproveitado com sucesso; se
+            # o guia não vier (fontes não prontas ou guia vazio), cai pro Gemini como fallback,
+            # pra nunca perder a aula.
+            #
+            # IMPORTANTE: NÃO é gateado por STORAGE_BACKEND. O Pi roda STORAGE_BACKEND=cloud
+            # (usa o Drive via API em vez do Drive Desktop), mas o IP é residencial e o áudio
+            # processa; o STORAGE_BACKEND distingue a API do Drive, não a residência do IP. O
+            # único host que tinha IP de datacenter era o Cloud Run, removido do código.
+            audio_first = bool(audios)
 
             # 1. Cria o NotebookLM para a aula - ou reaproveita o de uma tentativa
             # anterior (se ainda existir), pra não acumular notebooks órfãos toda
