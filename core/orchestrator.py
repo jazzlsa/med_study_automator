@@ -1,7 +1,7 @@
 import os
 import re
 from pathlib import Path
-from typing import List, Union, Optional, Any
+from typing import List, Union, Optional, Any, Dict
 from core.multimodal_processor import multimodal_processor
 from core.claude_client import claude_client
 from core.notebooklm_client import notebooklm_client
