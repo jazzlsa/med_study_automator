@@ -74,6 +74,12 @@ class DatabaseManager:
         'partial_failure', 'error') - nunca 'success' quando uma etapa crítica falhou.
         `details` pode trazer um resumo curto do que deu errado, quando aplicável.
         """
+        # Normaliza o nome antes de persistir: nomes com espaços/quebras nas bordas
+        # (ex.: "Aula 06 ... (Exercícios) " vindo da renomeação de pasta no Drive)
+        # quebrariam depois o casamento exato em get_lesson_status/is_lesson_completed,
+        # fazendo o pipeline reprocessar aula já concluída (e duplicar notebook/queimar
+        # cota do Gemini). Trim impede que o problema volte.
+        lesson_name = lesson_name.strip()
         try:
             with self._get_connection() as conn:
                 conn.execute("""
@@ -94,7 +100,7 @@ class DatabaseManager:
                     SELECT lesson_name, notebook_id, status, details, processed_at
                     FROM completed_lessons
                     WHERE unit_code = ? AND lesson_name = ?
-                """, (unit_code, lesson_name))
+                """, (unit_code, lesson_name.strip()))
                 row = cursor.fetchone()
                 if row:
                     return {
@@ -177,7 +183,7 @@ class DatabaseManager:
                 conn.execute("""
                     UPDATE completed_lessons SET anki_synced_at = CURRENT_TIMESTAMP
                     WHERE unit_code = ? AND lesson_name = ?
-                """, (unit_code, lesson_name))
+                """, (unit_code, lesson_name.strip()))
                 conn.commit()
             logger.info(f"Aula {lesson_name} marcada como sincronizada com o Anki.")
         except Exception as e:
