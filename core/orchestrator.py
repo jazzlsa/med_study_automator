@@ -58,7 +58,6 @@ class Orchestrator:
             audios = [Path(raw_audios)] if isinstance(raw_audios, (str, Path)) else [Path(p) for p in raw_audios if p] if isinstance(raw_audios, list) else []
 
             # --- Roteamento: caminho normal (Gemini) vs "áudio-primeiro" ---
-            is_cloud = os.environ.get("STORAGE_BACKEND", "local").strip().lower() == "cloud"
             # Áudio-primeiro: ativa SEMPRE que houver áudio. O NotebookLM ingere o áudio
             # direto (testado em 2026-08-31 que o Pi, IP residencial, ingere - o bloqueio de
             # "IP de datacenter" era herança do Cloud Run, que já saiu do código). Nesse caso
@@ -67,11 +66,6 @@ class Orchestrator:
             # Gemini na transcrição. Só vale com notebook criado/reaproveitado com sucesso; se
             # o guia não vier (fontes não prontas ou guia vazio), cai pro Gemini como fallback,
             # pra nunca perder a aula.
-            #
-            # IMPORTANTE: NÃO é gateado por STORAGE_BACKEND. O Pi roda STORAGE_BACKEND=cloud
-            # (usa o Drive via API em vez do Drive Desktop), mas o IP é residencial e o áudio
-            # processa; o STORAGE_BACKEND distingue a API do Drive, não a residência do IP. O
-            # único host que tinha IP de datacenter era o Cloud Run, removido do código.
             audio_first = bool(audios)
 
             # 1. Cria o NotebookLM para a aula - ou reaproveita o de uma tentativa
@@ -289,38 +283,17 @@ class Orchestrator:
                             notebook_id=notebook_id,
                             notebook_url=notebook_url,
                             tema=tema,
-                            is_cloud=is_cloud,
-                            audios=audios,
-                            transcript_path=transcript_path,
                             existing_artifact_types=existing_artifact_types,
                             ready_result=audio_first_ready,
                         )
                     )
                 else:
-                    # 3. Injeta as fontes no NotebookLM de uma vez (slide + transcrição
-                    # sempre; áudio bruto só no backend local). Fontes que já estão
-                    # indexadas num notebook reaproveitado são puladas
-                    # (existing_source_titles), pra não duplicar.
-                    #
-                    # Rodando na nuvem (STORAGE_BACKEND=cloud), o NotebookLM falha em
-                    # processar áudio vindo de IP de datacenter (bug real confirmado em
-                    # produção: mesmo arquivo, 0/N sucessos na nuvem vs sucesso imediato
-                    # local, em vários testes) - provável bloqueio/degradação por
-                    # anti-abuso, não corrigível do nosso lado. Em vez de tentar (e
-                    # sempre falhar) o áudio bruto, usa só a transcrição do Gemini como
-                    # fonte de texto - cobre o mesmo conteúdo informacional, e os
-                    # artefatos do Estúdio (inclusive "Áudio") são sintetizados a partir
-                    # do conteúdo das fontes, não dependem da fonte já ser áudio.
+                    # 3. Injeta as fontes no NotebookLM de uma vez (slides, áudios e transcrição
+                    # se houver). Fontes que já estão indexadas num notebook reaproveitado são
+                    # puladas (existing_source_titles), pra não duplicar.
                     extra_sources = [transcript_path] if transcript_path else []
-                    audio_sources = [] if is_cloud else audios
-                    if is_cloud and audios:
-                        logger.info(
-                            f"STORAGE_BACKEND=cloud - pulando upload do áudio bruto pro NotebookLM "
-                            f"({[a.name for a in audios]}), usando só a transcrição do Gemini como fonte "
-                            f"(áudio na nuvem tem falha conhecida de processamento no NotebookLM)."
-                        )
                     sources_result = notebooklm_client.add_sources_to_notebook(
-                        notebook_id, slides + audio_sources + extra_sources, skip_titles=existing_source_titles
+                        notebook_id, slides + audios + extra_sources, skip_titles=existing_source_titles
                     )
                     if not sources_result["success"]:
                         failed_files = [s["file"] for s in sources_result["sources"] if not s["success"]]
@@ -352,9 +325,6 @@ class Orchestrator:
                             notebook_id=notebook_id,
                             notebook_url=notebook_url,
                             tema=tema,
-                            is_cloud=is_cloud,
-                            audios=audios,
-                            transcript_path=transcript_path,
                             existing_artifact_types=existing_artifact_types,
                             ready_result=ready_result,
                         )
@@ -408,9 +378,6 @@ class Orchestrator:
         notebook_id: str,
         notebook_url: str,
         tema: Optional[str],
-        is_cloud: bool,
-        audios: List[Path],
-        transcript_path: Optional[str],
         existing_artifact_types: set,
         ready_result: Dict[str, Any],
     ) -> List[str]:
@@ -420,23 +387,7 @@ class Orchestrator:
         falhas das etapas que executou aqui (vazia se tudo certo)."""
         failures: List[str] = []
 
-        # Bug real observado em (Cloud) produção: quando o áudio é pulado na nuvem E a
-        # transcrição do Gemini também falha por qualquer motivo, sobra só o slide como
-        # fonte - "todas as fontes prontas" dá certo (não tem nada pendente/com erro, só
-        # faltou ADICIONAR a transcrição), e o Estúdio era gerado mesmo assim, baseado só
-        # no slide, perdendo todo o conteúdo do áudio silenciosamente. Só bloqueia num
-        # notebook realmente novo (sem artefato nenhum ainda) - não impede o retry de
-        # aproveitar um Estúdio já gerado numa tentativa anterior boa.
-        missing_audio_content = is_cloud and bool(audios) and not transcript_path and not existing_artifact_types
-
-        if ready_result["success"] and missing_audio_content:
-            logger.error(
-                "Áudio pulado na nuvem e a transcrição do Gemini não ficou disponível "
-                "(falhou nesta execução) - PULANDO a geração do Estúdio, pra não gerar "
-                "perdendo todo o conteúdo do áudio. O retry automático tenta de novo."
-            )
-            failures.append("transcrição do Gemini indisponível (áudio pulado na nuvem) - Estúdio não gerado")
-        elif ready_result["success"]:
+        if ready_result["success"]:
             # 4. Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards,
             # teste, slides, vídeo, infográfico, tabela de dados, mapa mental) UMA
             # ÚNICA VEZ, depois que todas as fontes já foram adicionadas. Artefatos
