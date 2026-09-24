@@ -89,7 +89,7 @@ STUDIO_LANGUAGE = "pt_BR"
 
 STUDIO_ARTIFACT_SPECS = [
     {"key": "audio", "args": ["generate", "audio", "--language", STUDIO_LANGUAGE]},
-    {"key": "report", "args": ["generate", "report", "--format", "study-guide", "--language", STUDIO_LANGUAGE]},
+    {"key": "report", "args": ["generate", "report", "--format", "briefing-doc", "--language", STUDIO_LANGUAGE]},
     {"key": "flashcards", "args": ["generate", "flashcards", "--difficulty", "hard", "--quantity", "more"]},
     {"key": "quiz", "args": ["generate", "quiz", "--difficulty", "hard", "--quantity", "more"]},
     {"key": "slide_deck", "args": ["generate", "slide-deck", "--language", STUDIO_LANGUAGE]},
