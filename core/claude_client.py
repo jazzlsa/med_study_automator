@@ -291,7 +291,10 @@ Retorne ESTRITAMENTE um objeto JSON válido no formato:
                             "model_used": "claude_cli",
                         }
                 else:
-                    logger.warning(f"Claude CLI retornou código {process.returncode}: {process.stderr[:300]}")
+                    # O CLI escreve erros de autenticação no stdout (ex.: "Failed to
+                    # authenticate: OAuth session expired...") - só stderr deixava o log vazio.
+                    detalhe = (process.stderr or "").strip() or (process.stdout or "").strip()
+                    logger.warning(f"Claude CLI retornou código {process.returncode}: {detalhe[:300]}")
             except Exception as e:
                 logger.warning(f"Execução do Claude CLI falhou: {e}")
 
