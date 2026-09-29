@@ -267,8 +267,12 @@ class Orchestrator:
                 anki_sync_result = anki_connect.sync_flashcards_to_anki(flashcards, unit_code, lesson_name)
                 if anki_sync_result["available"] and not anki_sync_result["success"]:
                     step_failures.append(f"sincronização com o Anki ({anki_sync_result['error']})")
-            elif gemini_result.get("success"):
+            else:
+                # Conta como falha pra aula ser retentada. Bug real (2026-09-28/29): no
+                # áudio-primeiro não há fallback do Gemini, então com o Claude fora do ar
+                # as aulas ficavam sem .apkg nenhum e mesmo assim eram marcadas 'success'.
                 logger.warning("Nenhum flashcard gerado (Claude e Gemini) para esta aula - .apkg não foi gerado.")
+                step_failures.append("geração de flashcards (nenhum flashcard gerado - Claude indisponível?)")
 
             if create_result["success"]:
                 if audio_first_used:
