@@ -100,6 +100,24 @@ class SheetsClient:
         return False
 
     @staticmethod
+    def _ordered_insert_row(aula_values: list, lesson_name: str) -> int:
+        """Linha (1-based) onde uma aula nova deve entrar. Normalmente é o final,
+        mas se a aula for "<base> - Parte N" e a planilha já tiver uma parte maior
+        da mesma aula, entra antes dela - pra Parte 1 retentada não cair depois
+        das Partes 2 e 3."""
+        append_row = len(aula_values) + 1
+        m = re.match(r"^(.*?)\s*-\s*parte\s*(\d+)\s*$", lesson_name.strip(), re.IGNORECASE)
+        if not m:
+            return append_row
+        base, part = m.group(1), int(m.group(2))
+        part_re = re.compile(rf"^{re.escape(base)}\s*-\s*parte\s*(\d+)\b", re.IGNORECASE)
+        for idx, value in enumerate(aula_values[1:], start=2):
+            pm = part_re.match((value or "").strip())
+            if pm and int(pm.group(1)) > part:
+                return idx
+        return append_row
+
+    @staticmethod
     def _col_letter(col_idx: int) -> str:
         """Converte um índice de coluna 1-based (1, 2, 27...) pra letra A1 (A, B, AA...)."""
         return re.sub(r"\d+$", "", gspread.utils.rowcol_to_a1(1, col_idx))
@@ -238,8 +256,12 @@ class SheetsClient:
         # título diagnóstico próprio, só a identificação do caso).
         has_real_tema = bool(tema) and tema.strip().lower() not in lesson_name.lower()
         row_lesson_name = f"{lesson_name} - {tema}" if has_real_tema else lesson_name
-        new_row = len(aula_values) + 1
+        new_row = self._ordered_insert_row(aula_values, lesson_name)
         try:
+            if new_row <= len(aula_values):
+                # Parte processada fora de ordem (ex.: Parte 1 retentada depois das
+                # Partes 2 e 3): abre uma linha antes da parte seguinte.
+                worksheet.insert_row([], index=new_row, inherit_from_before=True)
             worksheet.update_cell(new_row, aula_col_idx, row_lesson_name)
             worksheet.update_cell(new_row, link_col_idx, notebook_url)
             if autor_col_idx:

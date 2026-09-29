@@ -209,6 +209,24 @@ class NotebookLMClient:
         result = self._run_cli(["use", notebook_id], timeout=CREATE_TIMEOUT_SECONDS)
         return result["success"]
 
+    def find_notebook_by_title(self, title: str) -> Optional[str]:
+        """Retorna o ID do notebook com exatamente esse título (o mais recente, se
+        houver mais de um), ou None se não houver ou a listagem falhar."""
+        result = self._run_cli(["list"], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
+        if not result["success"]:
+            logger.warning(f"Não consegui listar os notebooks pra procurar '{title}': {result['error']}")
+            return None
+        data = result["data"] or {}
+        notebooks = data.get("notebooks", []) if isinstance(data, dict) else data
+        matches = [
+            n for n in notebooks
+            if isinstance(n, dict) and (n.get("title") or "").strip() == title.strip() and n.get("id")
+        ]
+        if not matches:
+            return None
+        matches.sort(key=lambda n: n.get("created_at") or "", reverse=True)
+        return matches[0]["id"]
+
     def list_ready_source_titles(self, notebook_id: str) -> set:
         """Retorna os títulos das fontes já indexadas com sucesso (status 'ready')
         num notebook - usado pra não re-adicionar (duplicar) fontes ao reaproveitar
@@ -369,8 +387,28 @@ class NotebookLMClient:
 
         Retorna o erro real (ex.: "Authentication expired or invalid...") em vez de
         só None, pra quem chama conseguir propagar isso pro log/status final -
-        importante pra rodar sozinho de madrugada sem ninguém olhando na hora."""
+        importante pra rodar sozinho de madrugada sem ninguém olhando na hora.
+
+        Idempotente por título: se já existir um notebook com exatamente esse
+        título, reaproveita em vez de criar outro. Bug real (2026-09-29): o
+        'create' da UC16 Aula 10 - Parte 1 estourou o timeout, mas o NotebookLM
+        criou o notebook segundos depois - sem o ID no banco, a retentativa
+        criaria um duplicado."""
+        existing_id = self.find_notebook_by_title(title)
+        if existing_id:
+            logger.info(f"Notebook '{title}' já existe ({existing_id}) - reaproveitando em vez de criar outro.")
+            return {"success": True, "notebook_id": existing_id, "error": None}
+
         result = self._run_cli(["create", title], timeout=CREATE_TIMEOUT_SECONDS)
+        if not result["success"] and "timeout" in (result["error"] or ""):
+            # O create pode ter sido concluído no servidor mesmo com o timeout local.
+            time.sleep(10)
+            existing_id = self.find_notebook_by_title(title)
+            if existing_id:
+                logger.warning(
+                    f"'create' de '{title}' estourou o timeout, mas o notebook foi criado ({existing_id}) - seguindo com ele."
+                )
+                return {"success": True, "notebook_id": existing_id, "error": None}
         if not result["success"]:
             logger.error(f"Falha ao criar notebook '{title}': {result['error']}")
             return {"success": False, "notebook_id": None, "error": result["error"]}
