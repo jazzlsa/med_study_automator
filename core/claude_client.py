@@ -261,16 +261,18 @@ Retorne ESTRITAMENTE um objeto JSON válido no formato:
         if claude_bin:
             try:
                 logger.info("Tentando geração de flashcards via Claude Code CLI (claude -p)...")
+                # Prompt vai por stdin: como argumento estoura o limite de linha de comando
+                # do Windows (~32k chars) com transcrições longas -> WinError 206.
                 process = subprocess.run(
                     [
                         claude_bin,
                         "-p",
-                        prompt,
                         "--output-format",
                         "text",
                         "--tools",
                         "",
                     ],
+                    input=prompt,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

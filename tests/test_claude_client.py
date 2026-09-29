@@ -35,3 +35,33 @@ def test_claude_client_build_prompt():
     assert "Transcrição teste de aula sobre vias aéreas." in prompt
     assert "GABARITO COMENTADO" in prompt
     assert "imagem_slide_pagina" in prompt
+
+
+def test_claude_cli_recebe_prompt_por_stdin(monkeypatch):
+    """Prompt longo não pode ir como argumento (WinError 206 no Windows)."""
+    import subprocess
+    import core.claude_client as mod
+
+    chamadas = {}
+
+    class Resultado:
+        returncode = 0
+        stdout = '{"flashcards": [{"tipo": "mc", "enunciado": "Pergunta?"}]}'
+        stderr = ""
+
+    def fake_run(args, **kwargs):
+        chamadas["args"] = args
+        chamadas["input"] = kwargs.get("input")
+        return Resultado()
+
+    client = ClaudeClient()
+    monkeypatch.setattr(client, "_get_anthropic_client", lambda: None)
+    monkeypatch.setattr(mod.shutil, "which", lambda _: "claude")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    transcricao = "x" * 50_000
+    resultado = client.generate_flashcards("Aula 1", "UC16", transcricao, [])
+
+    assert resultado["success"]
+    assert transcricao in chamadas["input"]
+    assert all(len(a) < 1000 for a in chamadas["args"])
