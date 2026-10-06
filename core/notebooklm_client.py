@@ -380,7 +380,15 @@ class NotebookLMClient:
             logger.warning(f"Não consegui listar os artefatos existentes do notebook {notebook_id}: {result['error']}")
             return set()
         artifacts = (result["data"] or {}).get("artifacts", [])
-        return {a["type_id"] for a in artifacts if a.get("status") in ("completed", "in_progress") and a.get("type_id")}
+        # "pending" também conta: bug real (2026-10-06) - recém-disparado (inclusive
+        # quando o generate volta RateLimitError mas o artefato é criado mesmo assim)
+        # fica "pending", e sem contar isso cada retentativa horária disparava mais
+        # uma cópia (até 8 vídeos pendentes + dezenas de "failed" na mesma aula).
+        return {
+            a["type_id"]
+            for a in artifacts
+            if a.get("status") in ("completed", "in_progress", "pending") and a.get("type_id")
+        }
 
     def create_notebook(self, title: str) -> Dict[str, Any]:
         """Cria um notebook e retorna um dict {"success", "notebook_id", "error"}.

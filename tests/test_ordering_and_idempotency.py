@@ -66,3 +66,13 @@ def test_create_reaproveita_notebook_existente(monkeypatch):
     r = client.create_notebook("UC16 - Aula 10 - Parte 1")
     assert r == {"success": True, "notebook_id": "velho", "error": None}
     assert "create" not in chamadas
+
+
+def test_artefato_pending_conta_como_ja_disparado(monkeypatch):
+    client = NotebookLMClient.__new__(NotebookLMClient)
+    monkeypatch.setattr(client, "_run_cli", lambda args, timeout: {"success": True, "error": None, "data": {"artifacts": [
+        {"type_id": "video", "status": "pending"},
+        {"type_id": "audio", "status": "completed"},
+        {"type_id": "slide_deck", "status": "failed"},
+    ]}})
+    assert client.list_existing_artifact_types("nb") == {"video", "audio"}
