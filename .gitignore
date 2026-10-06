@@ -37,3 +37,6 @@ log_*.json
 # Scripts de teste manual/scratch - não fazem parte do pipeline
 scratch_*.py
 .aider*
+
+# OAuth do Classroom (scripts/setup_classroom_oauth.py)
+config/classroom_oauth_secrets.json
