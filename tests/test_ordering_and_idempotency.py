@@ -18,6 +18,24 @@ def test_ultima_parte_vai_pro_final_e_nao_confunde_aula_1_com_aula_10():
     assert SheetsClient._ordered_insert_row(col, "Aula 1 - Parte 1") == 2
 
 
+def test_aula_atrasada_entra_antes_da_aula_seguinte():
+    col = ["Aula", "Aula 8", "Aula 10 - parte 2 - TCLE (PC)", "Aula 11 - Coorte"]
+    assert SheetsClient._ordered_insert_row(col, "Aula 9") == 3
+    assert SheetsClient._ordered_insert_row(col, "Aula 10 - parte 1") == 3
+    assert SheetsClient._ordered_insert_row(col, "Leitura Prévia 9") == 5
+
+
+def test_ordem_e_busca_ficam_na_secao_do_semestre_atual():
+    col = [
+        "1º Semestre - Resp. I", "Aula 11 - Sono", "Aula 12 - Parte 1 - Insuficiência", "",
+        "2° semestre - Resp. II", "Aula 8 Parte 2 - FMUSP", "Aula 13 - TEP",
+    ]
+    assert SheetsClient._section_start(col) == 6
+    assert SheetsClient._ordered_insert_row(col, "Aula 11") == 7
+    assert SheetsClient._ordered_insert_row(col, "Aula 14") == 8
+    assert SheetsClient._section_start(["Aula", "Aula 1", "Aula 2"]) == 2
+
+
 def test_create_reaproveita_notebook_existente(monkeypatch):
     client = NotebookLMClient.__new__(NotebookLMClient)
     chamadas = []

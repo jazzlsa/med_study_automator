@@ -100,20 +100,43 @@ class SheetsClient:
         return False
 
     @staticmethod
-    def _ordered_insert_row(aula_values: list, lesson_name: str) -> int:
-        """Linha (1-based) onde uma aula nova deve entrar. Normalmente é o final,
-        mas se a aula for "<base> - Parte N" e a planilha já tiver uma parte maior
-        da mesma aula, entra antes dela - pra Parte 1 retentada não cair depois
-        das Partes 2 e 3."""
-        append_row = len(aula_values) + 1
-        m = re.match(r"^(.*?)\s*-\s*parte\s*(\d+)\s*$", lesson_name.strip(), re.IGNORECASE)
-        if not m:
-            return append_row
-        base, part = m.group(1), int(m.group(2))
-        part_re = re.compile(rf"^{re.escape(base)}\s*-\s*parte\s*(\d+)\b", re.IGNORECASE)
+    def _section_start(aula_values: list) -> int:
+        """Primeira linha (1-based) da seção atual da aba. Abas como UC04/UC05 têm o
+        1º semestre em cima e uma linha separadora tipo "Segundo Semestre" /
+        "2° semestre - Resp. II" antes do 2º - e os nomes de aula se repetem entre
+        as seções ("Aula 8" existe nas duas). Bug real corrigido: a busca pegava a
+        "Aula 11" do 1º semestre e sobrescrevia o link dela com o notebook da
+        "Aula 11" do 2º. Sem separador, a seção é a aba inteira (linha 2)."""
+        start = 2
         for idx, value in enumerate(aula_values[1:], start=2):
-            pm = part_re.match((value or "").strip())
-            if pm and int(pm.group(1)) > part:
+            v = (value or "").strip().lower()
+            if "semestre" in v and not v.startswith("aula"):
+                start = idx + 1
+        return start
+
+    @staticmethod
+    def _lesson_key(name: str) -> Optional[tuple]:
+        """(número da aula, parte) de "Aula 10 - Parte 2 - ..." -> (10, 2); sem parte
+        -> (10, 0). None se o nome não começar com "Aula N" (ex.: "Leitura Prévia 8")."""
+        m = re.match(r"^aula\s*(\d+)\b(?:\s*-?\s*parte\s*(\d+)\b)?", (name or "").strip(), re.IGNORECASE)
+        if not m:
+            return None
+        return int(m.group(1)), int(m.group(2) or 0)
+
+    @classmethod
+    def _ordered_insert_row(cls, aula_values: list, lesson_name: str) -> int:
+        """Linha (1-based) onde uma aula nova deve entrar: antes da primeira aula da
+        seção atual com número (ou parte) maior - pra aula/parte retentada ou
+        processada fora de ordem não cair depois das seguintes. Sem nenhuma maior
+        (caso normal), vai pro final."""
+        append_row = len(aula_values) + 1
+        key = cls._lesson_key(lesson_name)
+        if key is None:
+            return append_row
+        start = cls._section_start(aula_values)
+        for idx, value in enumerate(aula_values[start - 1:], start=start):
+            other = cls._lesson_key(value)
+            if other is not None and other > key:
                 return idx
         return append_row
 
@@ -224,10 +247,12 @@ class SheetsClient:
             logger.error(f"Falha ao ler a coluna de aulas na aba '{worksheet_title}': {e}")
             return False
 
+        # Só procura dentro da seção atual (ex.: 2º semestre) - ver _section_start.
+        section_start = self._section_start(aula_values)
         target_row = next(
             (
                 idx
-                for idx, value in enumerate(aula_values[1:], start=2)  # pula o cabeçalho
+                for idx, value in enumerate(aula_values[section_start - 1:], start=section_start)
                 if self._lesson_matches(value, lesson_name)
             ),
             None,
@@ -259,8 +284,8 @@ class SheetsClient:
         new_row = self._ordered_insert_row(aula_values, lesson_name)
         try:
             if new_row <= len(aula_values):
-                # Parte processada fora de ordem (ex.: Parte 1 retentada depois das
-                # Partes 2 e 3): abre uma linha antes da parte seguinte.
+                # Aula/parte processada fora de ordem (ex.: Parte 1 retentada depois
+                # das Partes 2 e 3): abre uma linha antes da seguinte.
                 worksheet.insert_row([], index=new_row, inherit_from_before=True)
             worksheet.update_cell(new_row, aula_col_idx, row_lesson_name)
             worksheet.update_cell(new_row, link_col_idx, notebook_url)
