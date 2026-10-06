@@ -40,6 +40,10 @@ _MIME_TO_KIND = {
     "audio/flac": ("audio", ".flac"),
     "audio/x-flac": ("audio", ".flac"),
     "audio/webm": ("audio", ".weba"),
+    # Gravador de celular salva áudio puro em contêiner MP4 e o Drive rotula
+    # como video/mp4 (caso real: UC04 Aula 8, só uma faixa AAC). .m4a é o
+    # mesmo contêiner, então Gemini/NotebookLM tratam como áudio normalmente.
+    "video/mp4": ("audio", ".m4a"),
     "application/pdf": ("slide", ".pdf"),
     "application/vnd.ms-powerpoint": ("slide", ".ppt"),
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": ("slide", ".pptx"),
