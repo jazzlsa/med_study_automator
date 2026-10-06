@@ -100,6 +100,37 @@ class SheetsClient:
         return False
 
     @staticmethod
+    def _lesson_title(name: str) -> str:
+        """O que vem depois de "Aula N" (com a parte), normalizado: "Aula 10 - parte 1
+        - Intervalo (MQ)" -> "parte 1 - intervalo (mq)". Vazio se não começar com
+        "Aula N" ou se depois do número só houver "parte N" (genérico demais pra
+        identificar a aula sozinho)."""
+        m = re.match(r"^aula\s*\d+\b\s*[-–—:]?\s*(.*)$", (name or "").strip(), re.IGNORECASE)
+        if not m:
+            return ""
+        title = re.sub(r"\s+", " ", m.group(1)).strip().lower()
+        if len(re.sub(r"^parte\s*\d+\s*[-–—:]?\s*", "", title)) < 6:
+            return ""
+        return title
+
+    @classmethod
+    def _find_by_title(cls, aula_values: list, lesson_name: str, start: int) -> Optional[int]:
+        """Fallback quando o número da aula não bate: a planilha foi renumerada à mão
+        (ex.: UC29, pasta "Aula 10 - parte 1 - Intervalo de confiança" virou a linha
+        "Aula 9 - parte 1 - Intervalo de confiança") mas a pasta no Drive não. Casa
+        pelo título depois do número - só se houver exatamente uma linha assim na
+        seção, pra nunca escolher no chute."""
+        title = cls._lesson_title(lesson_name)
+        if not title:
+            return None
+        hits = []
+        for idx, value in enumerate(aula_values[start - 1:], start=start):
+            other = cls._lesson_title(value)
+            if other == title or (other.startswith(title) and other[len(title)] in " -:–—"):
+                hits.append(idx)
+        return hits[0] if len(hits) == 1 else None
+
+    @staticmethod
     def _section_start(aula_values: list) -> int:
         """Primeira linha (1-based) da seção atual da aba. Abas como UC04/UC05 têm o
         1º semestre em cima e uma linha separadora tipo "Segundo Semestre" /
@@ -257,6 +288,8 @@ class SheetsClient:
             ),
             None,
         )
+        if target_row is None:
+            target_row = self._find_by_title(aula_values, lesson_name, section_start)
 
         if target_row is not None:
             # Linha já existe (reprocessamento): só atualiza a célula de link.

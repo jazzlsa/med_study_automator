@@ -36,6 +36,21 @@ def test_ordem_e_busca_ficam_na_secao_do_semestre_atual():
     assert SheetsClient._section_start(["Aula", "Aula 1", "Aula 2"]) == 2
 
 
+def test_planilha_renumerada_casa_pelo_titulo():
+    col = [
+        "Aula", "Aula 3 - Parte 1 - Probabilidade II (MQ)",
+        "Aula 9 - parte 1 - Intervalo de confiança (MQ))", "Aula 9 - parte 2 - TCLE (PC)",
+        "Aula 10 - Estudo de Coorte (EP) ", "Aula 11 - parte 2 - Intervalo de confiança (MQ)",
+    ]
+    find = SheetsClient._find_by_title
+    assert find(col, "Aula 10 - parte 1 - Intervalo de confiança (MQ))", 2) == 3
+    assert find(col, "Aula 12 - parte 2 - Intervalo de confiança (MQ)", 2) == 6
+    assert find(col, "Aula 11 - Estudo de Coorte (EP)", 2) == 5
+    # genérico demais ("parte N" sem título) ou inexistente: não casa
+    assert find(col, "Aula 4 - Parte 1", 2) is None
+    assert find(col, "Aula 13 - Revisão sistemática", 2) is None
+
+
 def test_create_reaproveita_notebook_existente(monkeypatch):
     client = NotebookLMClient.__new__(NotebookLMClient)
     chamadas = []
