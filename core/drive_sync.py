@@ -72,6 +72,11 @@ def _materialize_with_extension(original_path: Path, ext: str) -> Path:
     return dest
 
 
+# Arquivo-marca que segura uma aula fora do processamento até chegar o resto do material
+# (ex.: "AGUARDANDO - falta material.txt", criado/apagado pelo bot Loti do WhatsApp).
+MARCA_AGUARDANDO = "AGUARDANDO"
+
+
 class DriveFolderScanner:
     """Escaneia o diretório local do Google Drive sincronizado (Drive Desktop, ex.:
     G:\\Meu Drive\\...) para encontrar aulas, PDFs e áudios. Usado quando
@@ -125,6 +130,9 @@ class DriveFolderScanner:
         INDEPENDENTE (nome = nome da subpasta) - cada uma gera seu próprio
         NotebookLM e sua própria linha na planilha.
         """
+        if any(p.is_file() and p.name.strip().upper().startswith(MARCA_AGUARDANDO) for p in lesson_folder.iterdir()):
+            logger.info(f"'{lesson_folder.name}' tem a marca {MARCA_AGUARDANDO} (esperando mais material) - pulando por enquanto.")
+            return []
         direct = self._find_direct_materials(lesson_folder)
         if direct["slide"] or direct["audio"]:
             return [{
@@ -281,6 +289,14 @@ class DriveApiScanner:
         ]
 
     def _scan_lesson_folder(self, lesson_folder: Dict[str, Any], unit_code: str) -> List[Dict[str, Any]]:
+        # Marca "AGUARDANDO..." na pasta (posta pelo bot Loti quando a aula ainda espera material, ex.: só
+        # o áudio chegou e os slides não): pula a aula sem baixar nada; ela volta quando a marca for apagada.
+        try:
+            if any(f["name"].strip().upper().startswith(MARCA_AGUARDANDO) for f in self._client.list_children(lesson_folder["id"])):
+                logger.info(f"[{unit_code}] '{lesson_folder['name']}' tem a marca {MARCA_AGUARDANDO} (esperando mais material) - pulando por enquanto.")
+                return []
+        except Exception as e:
+            logger.warning(f"[{unit_code}] Não consegui checar a marca {MARCA_AGUARDANDO} em '{lesson_folder['name']}': {e}")
         download_dir = self._download_root / unit_code / lesson_folder["name"]
         direct = self._find_direct_materials(lesson_folder["id"], download_dir)
         if direct["slide"] or direct["audio"]:
