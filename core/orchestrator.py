@@ -214,7 +214,21 @@ class Orchestrator:
             flashcards = []
             transcript_text = flashcard_source_text
 
-            if transcript_text or slides:
+            # Retentativa de aula cujos flashcards já saíram numa tentativa anterior
+            # (o que faltou foi só o Estúdio, por ex.): não pede de novo ao Claude.
+            # Bug real (2026-10-06): cada retentativa horária regerava os cards,
+            # gastava a cota do Claude e, com a cota esgotada, marcava a aula como
+            # falha de flashcards mesmo com o .apkg já publicado no Drive.
+            apkg_ja_publicado = previous is not None and drive_sync.flashcards_apkg_exists(
+                unit_code, _safe_filename(lesson_name)
+            )
+
+            if apkg_ja_publicado:
+                logger.info(
+                    "Flashcards desta aula já foram gerados e publicados numa tentativa anterior "
+                    "- pulando a geração (só completa o que faltou)."
+                )
+            elif transcript_text or slides:
                 logger.info("Solicitando geração de flashcards médicos ao Claude...")
                 claude_res = claude_client.generate_flashcards(
                     lesson_name=lesson_name,
@@ -239,7 +253,9 @@ class Orchestrator:
             else:
                 flashcards = gemini_result.get("flashcards") or []
 
-            if flashcards:
+            if apkg_ja_publicado:
+                pass
+            elif flashcards:
                 apkg_path = drive_sync.resolve_apkg_output_path(unit_code, _safe_filename(lesson_name))
                 apkg_result = build_flashcards_apkg(flashcards, unit_code, lesson_name, apkg_path)
                 if apkg_result["success"]:

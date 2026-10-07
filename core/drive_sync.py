@@ -194,6 +194,10 @@ class DriveFolderScanner:
         flashcards_root = Path(r"G:\Meu Drive") / settings.semester.drive_flashcards_folder_name
         return flashcards_root / unit_code / f"{lesson_name_safe}.apkg"
 
+    def flashcards_apkg_exists(self, unit_code: str, lesson_name_safe: str) -> bool:
+        """True se o .apkg da aula já está na pasta de flashcards do Drive."""
+        return self.resolve_apkg_output_path(unit_code, lesson_name_safe).exists()
+
     def publish_flashcards_apkg(self, local_apkg_path: Path, unit_code: str, lesson_name: str) -> Dict[str, Any]:
         """Backend local: o .apkg já foi escrito pelo chamador direto dentro da
         pasta sincronizada do Drive (G:\\Meu Drive\\MedStudy_Flashcards\\<UC>\\...) -
@@ -341,6 +345,22 @@ class DriveApiScanner:
         verdade por publish_flashcards_apkg (chamado logo em seguida pelo
         orchestrator)."""
         return self._download_root.parent / "flashcards_out" / unit_code / f"{lesson_name_safe}.apkg"
+
+    def flashcards_apkg_exists(self, unit_code: str, lesson_name_safe: str) -> bool:
+        """True se MedStudy_Flashcards/<UC>/<aula>.apkg já existe no Drive. Na
+        dúvida (pasta não achada, erro de API), False - aí o pipeline gera de novo."""
+        try:
+            root_id = self._flashcards_root_id()
+            if not root_id:
+                return False
+            uc = next((f for f in self._list_subfolders(root_id) if f["name"] == unit_code), None)
+            if not uc:
+                return False
+            target = f"{lesson_name_safe}.apkg"
+            return any(c["name"] == target for c in self._client.list_children(uc["id"]))
+        except Exception as e:
+            logger.warning(f"Não consegui checar se o .apkg de '{lesson_name_safe}' já existe no Drive: {e}")
+            return False
 
     def publish_flashcards_apkg(self, local_apkg_path: Path, unit_code: str, lesson_name: str) -> Dict[str, Any]:
         """Backend cloud: sobe o .apkg (já escrito localmente pelo chamador num
