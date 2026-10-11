@@ -36,6 +36,9 @@ SCOPES = [
     "https://www.googleapis.com/auth/classroom.coursework.me.readonly",
     "https://www.googleapis.com/auth/classroom.topics.readonly",
     "https://www.googleapis.com/auth/drive.readonly",
+    # lista de alunos das turmas (com e-mail), para o login do site de resumos (só alunos, sem professores)
+    "https://www.googleapis.com/auth/classroom.rosters.readonly",
+    "https://www.googleapis.com/auth/classroom.profile.emails",
 ]
 
 
