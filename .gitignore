@@ -40,3 +40,8 @@ scratch_*.py
 
 # OAuth do Classroom (scripts/setup_classroom_oauth.py)
 config/classroom_oauth_secrets.json
+
+# Projetos irmãos que moram dentro desta pasta mas NÃO vão pro repo público:
+# resumos_site/ tem git próprio (privado, jazzlsa/resumos-med-113); loti_whatsapp/ só existe no Pi.
+resumos_site/
+loti_whatsapp/
