@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from core.file_sniff import guess_mime_type
+from dotenv import load_dotenv
 from utils.logger import logger
 from utils.notify import send_notification
 
@@ -89,6 +90,8 @@ GENERATE_FIRE_TIMEOUT_SECONDS = 60
 # testes feitos até agora.
 STUDIO_LANGUAGE = "pt_BR"
 
+load_dotenv()  # as env vars da segunda conta vêm do .env
+
 # Limite de notebooks próprios do plano Pro e pontos de aviso/parada.
 NOTEBOOK_ACCOUNT_LIMIT = 500
 NOTEBOOK_WARN_AT = 450
@@ -98,6 +101,16 @@ NOTEBOOK_HARD_STOP = 490
 # Quando definido e a conta principal chega perto do limite de notebooks, os
 # notebooks NOVOS passam a ser criados nessa conta. Desligado se a env var não existir.
 EXTRA_PROFILE = os.environ.get("NOTEBOOKLM_EXTRA_PROFILE", "").strip() or None
+# NOTEBOOKLM_EXTRA_FIRST=1: os notebooks NOVOS nascem primeiro na conta extra; a
+# principal vira reserva (e continua dona/usada para as aulas que já existem).
+EXTRA_FIRST = os.environ.get("NOTEBOOKLM_EXTRA_FIRST", "").strip().lower() in ("1", "true", "sim", "yes")
+
+
+def _creation_order() -> list:
+    """Perfis (None = padrão) na ordem em que se tenta criar notebooks novos."""
+    if EXTRA_PROFILE and EXTRA_FIRST:
+        return [EXTRA_PROFILE, None]
+    return [None] + ([EXTRA_PROFILE] if EXTRA_PROFILE else [])
 
 # Desde 2026-10-12 só 4 artefatos por notebook: áudio, relatório (resumo em texto),
 # flashcards e teste (questões). Vídeo, slides, infográfico, tabela e mapa mental
@@ -195,6 +208,15 @@ class NotebookLMClient:
         checagem se mostrou flaky em produção por instabilidade de rede transitória
         (não por sessão de fato expirada), e sem retry uma única falha de rede
         isolada desperdiçava a execução horária inteira antes mesmo de começar."""
+        order = _creation_order()
+        if len(order) > 1:
+            # Duas contas: a de criação precisa estar autenticada; a outra só avisa.
+            for other in order[1:]:
+                self.profile = other
+                other_res = self._run_cli(["auth", "check", "--test", "--passive"], timeout=AUTH_CHECK_TIMEOUT_SECONDS)
+                if not other_res["success"]:
+                    logger.warning(f"Conta '{other or 'principal'}' do NotebookLM com sessão inválida: {other_res['error']}")
+        self.profile = order[0]
         last_result = None
         for attempt in range(1, AUTH_CHECK_MAX_ATTEMPTS + 1):
             last_result = self._run_cli(["auth", "check", "--test", "--passive"], timeout=AUTH_CHECK_TIMEOUT_SECONDS)
@@ -423,42 +445,47 @@ class NotebookLMClient:
         'create' da UC16 Aula 10 - Parte 1 estourou o timeout, mas o NotebookLM
         criou o notebook segundos depois - sem o ID no banco, a retentativa
         criaria um duplicado."""
-        self.profile = None  # começa pela conta principal
-        existing_id = self.find_notebook_by_title(title)
-        if existing_id:
-            logger.info(f"Notebook '{title}' já existe ({existing_id}) - reaproveitando em vez de criar outro.")
-            return {"success": True, "notebook_id": existing_id, "error": None}
+        order = _creation_order()
 
-        # Guarda do limite de notebooks (plano Pro: 500). Avisa cedo no ntfy e para
-        # antes do NotebookLM recusar, com erro próprio (não é sessão expirada).
-        owned = self.count_owned_notebooks()
-        if owned is not None and owned >= NOTEBOOK_HARD_STOP and EXTRA_PROFILE:
-            self.profile = EXTRA_PROFILE
-            extra_owned = self.count_owned_notebooks()
-            if extra_owned is not None and extra_owned < NOTEBOOK_HARD_STOP:
-                logger.warning(
-                    f"Conta principal com {owned} notebooks - criando '{title}' na conta extra "
-                    f"'{EXTRA_PROFILE}' ({extra_owned} notebooks)."
-                )
-                owned = extra_owned
-            else:
-                self.profile = None
-        if owned is not None:
-            if owned >= NOTEBOOK_HARD_STOP:
-                msg = f"LIMITE_NOTEBOOKS: a conta tem {owned} notebooks próprios (limite {NOTEBOOK_ACCOUNT_LIMIT}) - apague os que não servem mais"
-                logger.error(msg)
-                send_notification(
-                    title="🚨 NotebookLM: limite de notebooks",
-                    message=msg, priority="urgent", tags=["rotating_light"],
-                )
-                return {"success": False, "notebook_id": None, "error": msg}
-            if owned >= NOTEBOOK_WARN_AT:
-                logger.warning(f"Atenção: {owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios na conta.")
-                send_notification(
-                    title="⚠️ NotebookLM: perto do limite de notebooks",
-                    message=f"{owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios.",
-                    priority="default", tags=["warning"],
-                )
+        # Idempotência: se já existe notebook com esse título em alguma das contas, reaproveita.
+        for profile in order:
+            self.profile = profile
+            existing_id = self.find_notebook_by_title(title)
+            if existing_id:
+                logger.info(f"Notebook '{title}' já existe ({existing_id}) - reaproveitando em vez de criar outro.")
+                return {"success": True, "notebook_id": existing_id, "error": None}
+
+        # Escolhe a conta que cria o notebook e aplica a guarda do limite (plano Pro: 500):
+        # a primeira da ordem com espaço. Avisa cedo no ntfy e, se todas estiverem cheias,
+        # para com erro próprio (não é sessão expirada).
+        owned = None
+        chosen = False
+        full_counts = []
+        for profile in order:
+            self.profile = profile
+            owned = self.count_owned_notebooks()
+            if owned is None or owned < NOTEBOOK_HARD_STOP:
+                chosen = True
+                if profile != order[0]:
+                    logger.warning(f"Conta preferida cheia - criando '{title}' na conta '{profile or 'principal'}'.")
+                break
+            full_counts.append(owned)
+        if not chosen:
+            self.profile = order[0]
+            msg = f"LIMITE_NOTEBOOKS: todas as contas estão perto do limite ({full_counts} de {NOTEBOOK_ACCOUNT_LIMIT}) - apague os que não servem mais"
+            logger.error(msg)
+            send_notification(
+                title="🚨 NotebookLM: limite de notebooks",
+                message=msg, priority="urgent", tags=["rotating_light"],
+            )
+            return {"success": False, "notebook_id": None, "error": msg}
+        if owned is not None and owned >= NOTEBOOK_WARN_AT:
+            logger.warning(f"Atenção: {owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios na conta em uso.")
+            send_notification(
+                title="⚠️ NotebookLM: perto do limite de notebooks",
+                message=f"{owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios.",
+                priority="default", tags=["warning"],
+            )
 
         result = self._run_cli(["create", title], timeout=CREATE_TIMEOUT_SECONDS)
         if not result["success"] and "timeout" in (result["error"] or ""):
