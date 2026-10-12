@@ -1,3 +1,4 @@
+import os
 import subprocess
 import json
 import shutil
@@ -93,6 +94,11 @@ NOTEBOOK_ACCOUNT_LIMIT = 500
 NOTEBOOK_WARN_AT = 450
 NOTEBOOK_HARD_STOP = 490
 
+# Segunda conta (opcional): nome de um perfil da CLI ("notebooklm profile create").
+# Quando definido e a conta principal chega perto do limite de notebooks, os
+# notebooks NOVOS passam a ser criados nessa conta. Desligado se a env var não existir.
+EXTRA_PROFILE = os.environ.get("NOTEBOOKLM_EXTRA_PROFILE", "").strip() or None
+
 # Desde 2026-10-12 só 4 artefatos por notebook: áudio, relatório (resumo em texto),
 # flashcards e teste (questões). Vídeo, slides, infográfico, tabela e mapa mental
 # saíram: são os mais pesados na cota de uso do NotebookLM (que passou a ser por
@@ -115,13 +121,16 @@ class NotebookLMClient:
     """
 
     def __init__(self):
-        pass
+        # Perfil da CLI em uso nas chamadas (None = o padrão). Muda por aula:
+        # notebook_exists/create_notebook escolhem a conta dona do notebook.
+        self.profile: Optional[str] = None
 
     def _run_cli(self, args: List[str], timeout: int) -> Dict[str, Any]:
         """Executa um comando da CLI notebooklm e devolve um dict rico com
         success/error/data, sempre logando stderr (e stdout relevante) em caso de falha
         para dar visibilidade real do que deu errado."""
-        cmd = [NOTEBOOKLM_CLI] + args + ["--json"]
+        profile_args = ["-p", self.profile] if self.profile else []
+        cmd = [NOTEBOOKLM_CLI] + profile_args + args + ["--json"]
         printable_cmd = " ".join(cmd)
         logger.info(f"Executando CLI: {printable_cmd}")
 
@@ -204,8 +213,13 @@ class NotebookLMClient:
         """Confere se um notebook_id ainda existe de verdade no NotebookLM (ex.:
         pra decidir se vale reaproveitar o notebook de uma tentativa anterior, em
         vez de assumir cegamente que ele continua lá)."""
-        result = self._run_cli(["use", notebook_id], timeout=CREATE_TIMEOUT_SECONDS)
-        return result["success"]
+        candidates = [None] + ([EXTRA_PROFILE] if EXTRA_PROFILE else [])
+        for profile in candidates:
+            self.profile = profile
+            if self._run_cli(["use", notebook_id], timeout=CREATE_TIMEOUT_SECONDS)["success"]:
+                return True
+        self.profile = None
+        return False
 
     def find_notebook_by_title(self, title: str) -> Optional[str]:
         """Retorna o ID do notebook com exatamente esse título (o mais recente, se
@@ -409,6 +423,7 @@ class NotebookLMClient:
         'create' da UC16 Aula 10 - Parte 1 estourou o timeout, mas o NotebookLM
         criou o notebook segundos depois - sem o ID no banco, a retentativa
         criaria um duplicado."""
+        self.profile = None  # começa pela conta principal
         existing_id = self.find_notebook_by_title(title)
         if existing_id:
             logger.info(f"Notebook '{title}' já existe ({existing_id}) - reaproveitando em vez de criar outro.")
@@ -417,6 +432,17 @@ class NotebookLMClient:
         # Guarda do limite de notebooks (plano Pro: 500). Avisa cedo no ntfy e para
         # antes do NotebookLM recusar, com erro próprio (não é sessão expirada).
         owned = self.count_owned_notebooks()
+        if owned is not None and owned >= NOTEBOOK_HARD_STOP and EXTRA_PROFILE:
+            self.profile = EXTRA_PROFILE
+            extra_owned = self.count_owned_notebooks()
+            if extra_owned is not None and extra_owned < NOTEBOOK_HARD_STOP:
+                logger.warning(
+                    f"Conta principal com {owned} notebooks - criando '{title}' na conta extra "
+                    f"'{EXTRA_PROFILE}' ({extra_owned} notebooks)."
+                )
+                owned = extra_owned
+            else:
+                self.profile = None
         if owned is not None:
             if owned >= NOTEBOOK_HARD_STOP:
                 msg = f"LIMITE_NOTEBOOKS: a conta tem {owned} notebooks próprios (limite {NOTEBOOK_ACCOUNT_LIMIT}) - apague os que não servem mais"
