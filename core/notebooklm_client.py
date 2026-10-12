@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 from core.file_sniff import guess_mime_type
 from utils.logger import logger
+from utils.notify import send_notification
 
 # Caminho do executável da CLI notebooklm. Resolvido a partir de sys.executable
 # (o notebooklm/notebooklm.exe fica ao lado do python dentro de venv/bin ou venv/Scripts)
@@ -87,24 +88,21 @@ GENERATE_FIRE_TIMEOUT_SECONDS = 60
 # testes feitos até agora.
 STUDIO_LANGUAGE = "pt_BR"
 
+# Limite de notebooks próprios do plano Pro e pontos de aviso/parada.
+NOTEBOOK_ACCOUNT_LIMIT = 500
+NOTEBOOK_WARN_AT = 450
+NOTEBOOK_HARD_STOP = 490
+
+# Desde 2026-10-12 só 4 artefatos por notebook: áudio, relatório (resumo em texto),
+# flashcards e teste (questões). Vídeo, slides, infográfico, tabela e mapa mental
+# saíram: são os mais pesados na cota de uso do NotebookLM (que passou a ser por
+# carga de computação, renovada a cada 5 horas) e estouravam o limite de taxa.
 STUDIO_ARTIFACT_SPECS = [
     {"key": "audio", "args": ["generate", "audio", "--language", STUDIO_LANGUAGE]},
     {"key": "report", "args": ["generate", "report", "--format", "briefing-doc", "--language", STUDIO_LANGUAGE]},
     {"key": "flashcards", "args": ["generate", "flashcards", "--difficulty", "hard", "--quantity", "more"]},
     {"key": "quiz", "args": ["generate", "quiz", "--difficulty", "hard", "--quantity", "more"]},
-    {"key": "slide_deck", "args": ["generate", "slide-deck", "--language", STUDIO_LANGUAGE]},
-    {"key": "video", "args": ["generate", "video", "--language", STUDIO_LANGUAGE]},
-    {"key": "infographic", "args": ["generate", "infographic", "--language", STUDIO_LANGUAGE]},
-    # "data-table" exige uma descrição (não tem comportamento default sem argumento,
-    # ao contrário dos outros tipos) - por isso passamos uma descrição genérica.
-    {"key": "data_table", "args": ["generate", "data-table", "Tabela com os principais conceitos, comparações e dados da aula", "--language", STUDIO_LANGUAGE]},
 ]
-
-# "generate mind-map" é a única exceção: a CLI não tem --wait/--no-wait para ele -
-# ela sempre faz o polling internamente e só retorna quando termina (ou falha).
-# Não tem como disparar sem esperar aqui; mantemos um timeout generoso nosso só
-# como teto de segurança para não travar para sempre.
-MIND_MAP_TIMEOUT_SECONDS = 600
 
 
 class NotebookLMClient:
@@ -112,7 +110,7 @@ class NotebookLMClient:
 
     Fluxo esperado: criar notebook -> adicionar TODAS as fontes (aguardando cada
     uma indexar) -> disparar TODOS os artefatos do Estúdio (áudio, relatório,
-    flashcards, teste, slides, vídeo, infográfico, tabela de dados e mapa mental)
+    flashcards e teste)
     UMA ÚNICA VEZ, depois que todas as fontes estiverem prontas.
     """
 
@@ -390,6 +388,15 @@ class NotebookLMClient:
             if a.get("status") in ("completed", "in_progress", "pending") and a.get("type_id")
         }
 
+    def count_owned_notebooks(self) -> Optional[int]:
+        """Quantos notebooks a conta possui (is_owner). None se a listagem falhar."""
+        result = self._run_cli(["list"], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
+        if not result["success"]:
+            return None
+        data = result["data"] or {}
+        notebooks = data.get("notebooks", []) if isinstance(data, dict) else data
+        return sum(1 for n in notebooks if isinstance(n, dict) and n.get("is_owner"))
+
     def create_notebook(self, title: str) -> Dict[str, Any]:
         """Cria um notebook e retorna um dict {"success", "notebook_id", "error"}.
 
@@ -406,6 +413,26 @@ class NotebookLMClient:
         if existing_id:
             logger.info(f"Notebook '{title}' já existe ({existing_id}) - reaproveitando em vez de criar outro.")
             return {"success": True, "notebook_id": existing_id, "error": None}
+
+        # Guarda do limite de notebooks (plano Pro: 500). Avisa cedo no ntfy e para
+        # antes do NotebookLM recusar, com erro próprio (não é sessão expirada).
+        owned = self.count_owned_notebooks()
+        if owned is not None:
+            if owned >= NOTEBOOK_HARD_STOP:
+                msg = f"LIMITE_NOTEBOOKS: a conta tem {owned} notebooks próprios (limite {NOTEBOOK_ACCOUNT_LIMIT}) - apague os que não servem mais"
+                logger.error(msg)
+                send_notification(
+                    title="🚨 NotebookLM: limite de notebooks",
+                    message=msg, priority="urgent", tags=["rotating_light"],
+                )
+                return {"success": False, "notebook_id": None, "error": msg}
+            if owned >= NOTEBOOK_WARN_AT:
+                logger.warning(f"Atenção: {owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios na conta.")
+                send_notification(
+                    title="⚠️ NotebookLM: perto do limite de notebooks",
+                    message=f"{owned}/{NOTEBOOK_ACCOUNT_LIMIT} notebooks próprios.",
+                    priority="default", tags=["warning"],
+                )
 
         result = self._run_cli(["create", title], timeout=CREATE_TIMEOUT_SECONDS)
         if not result["success"] and "timeout" in (result["error"] or ""):
@@ -598,8 +625,7 @@ class NotebookLMClient:
         return summaries
 
     def generate_studio_artifacts(self, notebook_id: str, skip_types: Optional[set] = None) -> Dict[str, Any]:
-        """Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards difícil/mais,
-        teste difícil/mais, slides, vídeo, infográfico, tabela de dados e mapa mental)
+        """Dispara TODOS os artefatos do Estúdio (áudio, relatório, flashcards e teste)
         UMA ÚNICA VEZ por notebook, depois que todas as fontes já foram adicionadas e
         indexadas.
 
@@ -608,21 +634,23 @@ class NotebookLMClient:
         outro passo) - não espera nenhuma geração terminar. A conferência de que os
         artefatos realmente ficaram prontos é manual, direto no NotebookLM.
 
-        Exceção: "generate mind-map" não tem um modo fire-and-forget na CLI (ela sempre
-        bloqueia até terminar ou falhar) - por isso é a única chamada aqui que pode
-        demorar de verdade.
-
         `skip_types` (opcional): type_id de artefatos já disparados (completos ou em
         andamento) num notebook reaproveitado de uma tentativa anterior - esses são
         pulados em vez de disparados de novo (duplicados).
         """
         skip_types = skip_types or set()
         results: Dict[str, Any] = {}
+        rate_limited = False
 
         for spec in STUDIO_ARTIFACT_SPECS:
             if spec["key"] in skip_types:
                 logger.info(f"Artefato '{spec['key']}' já foi disparado no notebook reaproveitado - pulando.")
                 results[spec["key"]] = {"success": True, "error": None}
+                continue
+            if rate_limited:
+                # Depois do primeiro erro de limite os demais também falhariam e só
+                # gastariam mais cota (bug real, 2026-10-06: 930 erros em um dia).
+                results[spec["key"]] = {"success": False, "error": "não disparado: limite de uso do NotebookLM atingido"}
                 continue
             logger.info(f"Disparando geração de '{spec['key']}' no Estúdio do NotebookLM...")
             fire_result = self._run_cli(
@@ -634,30 +662,20 @@ class NotebookLMClient:
                 logger.info(f"Geração de '{spec['key']}' disparada com sucesso (task_id={task_id}).")
             else:
                 logger.warning(f"Falha ao disparar geração de '{spec['key']}': {fire_result['error']}")
+                if "RateLimitError" in (fire_result["error"] or ""):
+                    rate_limited = True
+                    logger.warning(
+                        "Limite de uso do NotebookLM atingido - não disparo os artefatos restantes "
+                        "desta aula; a próxima rodada tenta de novo."
+                    )
             results[spec["key"]] = {"success": fire_result["success"], "error": fire_result["error"]}
-
-        if "mind_map" in skip_types:
-            logger.info("Artefato 'mind_map' já foi disparado no notebook reaproveitado - pulando.")
-            results["mind_map"] = {"success": True, "error": None}
-        else:
-            # "generate mind-map" não tem modo fire-and-forget: já bloqueia até terminar.
-            logger.info("Solicitando geração de 'mind_map' no Estúdio do NotebookLM (chamada bloqueante)...")
-            mind_map_result = self._run_cli(
-                ["generate", "mind-map", "-n", notebook_id, "--language", STUDIO_LANGUAGE],
-                timeout=MIND_MAP_TIMEOUT_SECONDS,
-            )
-            if mind_map_result["success"]:
-                logger.info("Mapa mental gerado com sucesso.")
-            else:
-                logger.warning(f"Falha ao gerar mapa mental: {mind_map_result['error']}")
-            results["mind_map"] = {"success": mind_map_result["success"], "error": mind_map_result["error"]}
 
         overall_success = all(r.get("success") for r in results.values())
         if not overall_success:
             failed = [k for k, r in results.items() if not r.get("success")]
             logger.warning(f"Falha ao disparar um ou mais artefatos do Estúdio: {failed}")
 
-        return {"success": overall_success, "artifacts": results}
+        return {"success": overall_success, "artifacts": results, "rate_limited": rate_limited}
 
 
 notebooklm_client = NotebookLMClient()

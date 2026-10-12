@@ -110,7 +110,10 @@ class Orchestrator:
 
             if not create_result["success"]:
                 logger.error(f"Falha ao criar o NotebookLM '{notebook_title}'; pulando fontes e Estúdio.")
-                step_failures.append(f"criação do NotebookLM ({create_result['error']})")
+                if (create_result["error"] or "").startswith("LIMITE_NOTEBOOKS"):
+                    step_failures.append(f"limite de notebooks do NotebookLM ({create_result['error']})")
+                else:
+                    step_failures.append(f"criação do NotebookLM ({create_result['error']})")
             else:
                 # Notebook nasce privado por padrão - sem isso a turma não consegue
                 # abrir o link da planilha sem pedir acesso manualmente. Idempotente
@@ -418,7 +421,10 @@ class Orchestrator:
             if not studio_result["success"]:
                 failed_artifacts = [k for k, r in studio_result["artifacts"].items() if not r["success"]]
                 logger.error(f"Falha ao gerar um ou mais artefatos do Estúdio: {failed_artifacts}")
-                failures.append(f"artefatos do Estúdio ({', '.join(failed_artifacts)})")
+                if studio_result.get("rate_limited"):
+                    failures.append(f"Estúdio pausado pelo limite de uso do NotebookLM, retenta na próxima rodada ({', '.join(failed_artifacts)})")
+                else:
+                    failures.append(f"artefatos do Estúdio ({', '.join(failed_artifacts)})")
         elif ready_result.get("errored"):
             # Fonte com ERRO terminal de processamento no NotebookLM (ex.: áudio que o
             # backend nunca conseguiu processar) - diferente de "ainda processando",
