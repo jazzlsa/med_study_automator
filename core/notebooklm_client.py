@@ -104,6 +104,8 @@ EXTRA_PROFILE = os.environ.get("NOTEBOOKLM_EXTRA_PROFILE", "").strip() or None
 # NOTEBOOKLM_EXTRA_FIRST=1: os notebooks NOVOS nascem primeiro na conta extra; a
 # principal vira reserva (e continua dona/usada para as aulas que já existem).
 EXTRA_FIRST = os.environ.get("NOTEBOOKLM_EXTRA_FIRST", "").strip().lower() in ("1", "true", "sim", "yes")
+# Texto da coluna "Feito por" na planilha para notebooks criados na conta extra.
+EXTRA_AUTHOR_LABEL = os.environ.get("NOTEBOOKLM_EXTRA_LABEL", "").strip() or "Nelson automatizado"
 
 
 def _creation_order() -> list:

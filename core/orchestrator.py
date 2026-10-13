@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Union, Optional, Any, Dict
 from core.multimodal_processor import multimodal_processor
 from core.claude_client import claude_client
-from core.notebooklm_client import notebooklm_client
+from core.notebooklm_client import notebooklm_client, EXTRA_PROFILE, EXTRA_AUTHOR_LABEL
 from core.sheets_client import sheets_client
 from core.anki_flashcards import build_flashcards_apkg
 from core import anki_connect
@@ -454,7 +454,9 @@ class Orchestrator:
 
         # 5. Registra o link na Planilha do Google Sheets (com o tema real do
         # slide, quando disponível, pra compor o nome de uma linha nova).
-        sheets_ok = sheets_client.update_lesson_link(unit_code, lesson_name, notebook_url, tema=tema)
+        # Notebook criado na conta extra (Nelson) -> "Feito por" = "Nelson automatizado".
+        autor = EXTRA_AUTHOR_LABEL if EXTRA_PROFILE and notebooklm_client.profile == EXTRA_PROFILE else None
+        sheets_ok = sheets_client.update_lesson_link(unit_code, lesson_name, notebook_url, tema=tema, autor=autor)
         if not sheets_ok:
             logger.error(f"Falha ao registrar o link do NotebookLM na planilha (aba '{unit_code}').")
             failures.append("registro na planilha do Google Sheets")

@@ -211,7 +211,8 @@ class SheetsClient:
             logger.warning(f"Não consegui copiar a cor da linha acima para a linha {target_row}: {e}")
 
     def update_lesson_link(
-        self, unit_code: str, lesson_name: str, notebook_url: str, tema: Optional[str] = None
+        self, unit_code: str, lesson_name: str, notebook_url: str, tema: Optional[str] = None,
+        autor: Optional[str] = None,
     ) -> bool:
         """Escreve notebook_url na linha da aula correspondente, dentro da aba do
         unit_code. Se a linha já existir (reprocessamento), só atualiza a célula de
@@ -323,7 +324,7 @@ class SheetsClient:
             worksheet.update_cell(new_row, aula_col_idx, row_lesson_name)
             worksheet.update_cell(new_row, link_col_idx, notebook_url)
             if autor_col_idx:
-                worksheet.update_cell(new_row, autor_col_idx, AUTOMATED_AUTHOR_LABEL)
+                worksheet.update_cell(new_row, autor_col_idx, autor or AUTOMATED_AUTHOR_LABEL)
         except Exception as e:
             logger.error(
                 f"Falha ao acrescentar a aula '{row_lesson_name}' na planilha (aba '{worksheet_title}', linha {new_row}): {e}"
