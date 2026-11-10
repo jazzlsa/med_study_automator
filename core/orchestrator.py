@@ -178,7 +178,15 @@ class Orchestrator:
                         "- caindo pro Gemini (transcrição)."
                     )
 
-            if not audio_first_used:
+            audio_pendente = audio_first and not audio_first_used
+            if audio_pendente:
+                # Regra da usuária (2026-10-23): o Gemini NÃO transcreve áudio de aula; o áudio só vai para o NotebookLM.
+                # Se o NotebookLM ainda não entregou o guia do áudio, a aula fica pendente e é retentada na próxima rodada
+                # (o notebook é reaproveitado e as fontes já prontas não são duplicadas).
+                logger.warning("Áudio da aula ainda não está pronto no NotebookLM: NÃO usa o Gemini para transcrever; "
+                               "a aula será retentada na próxima rodada.")
+                step_failures.append("áudio ainda não pronto no NotebookLM (retenta na próxima rodada, sem Gemini)")
+            if not audio_first_used and not audio_first:
                 # 2. Extrai transcrição e resumo via Gemini ANTES de adicionar as fontes ao
                 # NotebookLM, pra poder incluir a transcrição gerada como uma fonte extra
                 # (junto com o slide e o áudio originais, não no lugar deles). Roda mesmo
@@ -231,7 +239,7 @@ class Orchestrator:
                     "Flashcards desta aula já foram gerados e publicados numa tentativa anterior "
                     "- pulando a geração (só completa o que faltou)."
                 )
-            elif transcript_text or slides:
+            elif (transcript_text or slides) and not audio_pendente:
                 logger.info("Solicitando geração de flashcards médicos ao Claude...")
                 claude_res = claude_client.generate_flashcards(
                     lesson_name=lesson_name,
@@ -253,6 +261,8 @@ class Orchestrator:
                         "utilizando flashcards do Gemini como fallback."
                     )
                     flashcards = gemini_result.get("flashcards") or []
+            elif audio_pendente:
+                flashcards = []   # espera o guia do áudio no NotebookLM
             else:
                 flashcards = gemini_result.get("flashcards") or []
 
@@ -291,7 +301,8 @@ class Orchestrator:
                 # áudio-primeiro não há fallback do Gemini, então com o Claude fora do ar
                 # as aulas ficavam sem .apkg nenhum e mesmo assim eram marcadas 'success'.
                 logger.warning("Nenhum flashcard gerado (Claude e Gemini) para esta aula - .apkg não foi gerado.")
-                step_failures.append("geração de flashcards (nenhum flashcard gerado - Claude indisponível?)")
+                if not audio_pendente:
+                    step_failures.append("geração de flashcards (nenhum flashcard gerado - Claude indisponível?)")
 
             if create_result["success"]:
                 if audio_first_used:
@@ -314,7 +325,10 @@ class Orchestrator:
                     # 3. Injeta as fontes no NotebookLM de uma vez (slides, áudios e transcrição
                     # se houver). Fontes que já estão indexadas num notebook reaproveitado são
                     # puladas (existing_source_titles), pra não duplicar.
-                    extra_sources = [transcript_path] if transcript_path else []
+                    # transcrição vazia (Gemini sem cota/sem texto) não vira fonte: o NotebookLM recusa arquivo vazio
+                    # e a aula inteira ficava presa em 'erro de processamento' sem se resolver sozinha
+                    extra_sources = [transcript_path] if (transcript_path and Path(transcript_path).exists()
+                                                          and Path(transcript_path).stat().st_size > 50) else []
                     sources_result = notebooklm_client.add_sources_to_notebook(
                         notebook_id, slides + audios + extra_sources, skip_titles=existing_source_titles
                     )

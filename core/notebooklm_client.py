@@ -21,7 +21,7 @@ NOTEBOOKLM_CLI = str(_notebooklm_sibling) if _notebooklm_sibling.exists() else (
 # Timeouts (segundos) para cada operação da CLI notebooklm-py. Os valores antigos
 # (10s/25s fixos) eram curtos demais para uploads e geração de estúdio reais.
 CREATE_TIMEOUT_SECONDS = 30
-SOURCE_ADD_TIMEOUT_SECONDS = 120
+SOURCE_ADD_TIMEOUT_SECONDS = 300
 SOURCE_WAIT_TIMEOUT_SECONDS = 180
 AUTH_CHECK_TIMEOUT_SECONDS = 30
 
@@ -32,7 +32,7 @@ SOURCE_INDEX_GRACE_SECONDS = 3
 # "source add" já se mostrou flaky na prática (a CLI pode entrar num loop de erro
 # assíncrono interno e falhar de forma transitória) - vale uma retentativa curta
 # antes de desistir, importante pra rodar sozinho de madrugada sem intervenção.
-SOURCE_ADD_MAX_ATTEMPTS = 2
+SOURCE_ADD_MAX_ATTEMPTS = 3
 SOURCE_ADD_RETRY_WAIT_SECONDS = 5
 
 # "auth check" também se mostrou flaky em produção (2026-08-26: metade das

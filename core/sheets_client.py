@@ -329,6 +329,12 @@ class SheetsClient:
             logger.error(
                 f"Falha ao acrescentar a aula '{row_lesson_name}' na planilha (aba '{worksheet_title}', linha {new_row}): {e}"
             )
+            # não deixa a linha em branco que foi aberta antes da escrita (acumulava linhas vazias a cada falha)
+            try:
+                if not any(str(c).strip() for c in worksheet.row_values(new_row)):
+                    worksheet.delete_rows(new_row)
+            except Exception as e2:
+                logger.warning(f"Não consegui limpar a linha em branco {new_row}: {e2}")
             return False
 
         self._copy_row_background_color(worksheet, new_row, len(headers))
