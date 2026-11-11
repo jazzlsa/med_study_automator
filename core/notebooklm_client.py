@@ -237,10 +237,12 @@ class NotebookLMClient:
         """Confere se um notebook_id ainda existe de verdade no NotebookLM (ex.:
         pra decidir se vale reaproveitar o notebook de uma tentativa anterior, em
         vez de assumir cegamente que ele continua lá)."""
-        candidates = [None] + ([EXTRA_PROFILE] if EXTRA_PROFILE else [])
-        for profile in candidates:
+        # Ordem de criação (conta extra primeiro quando EXTRA_FIRST) e verificação REAL no servidor
+        # ("source list"): "use" só grava o contexto local e dava sucesso na conta errada, o que fazia
+        # a aula reaproveitar o notebook com a conta que não é dona dele (rpc_code=7 em tudo).
+        for profile in _creation_order():
             self.profile = profile
-            if self._run_cli(["use", notebook_id], timeout=CREATE_TIMEOUT_SECONDS)["success"]:
+            if self._run_cli(["source", "list", "-n", notebook_id], timeout=SOURCE_ADD_TIMEOUT_SECONDS)["success"]:
                 return True
         self.profile = None
         return False
