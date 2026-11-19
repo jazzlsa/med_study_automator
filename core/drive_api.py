@@ -153,11 +153,17 @@ class DriveApiClient:
         query = f"'{folder_id}' in parents and trashed = false"
         while True:
             resp = service.files().list(
-                q=query, fields="nextPageToken, files(id, name, mimeType)",
+                q=query, fields="nextPageToken, files(id, name, mimeType, shortcutDetails)",
                 spaces="drive", pageToken=page_token,
                 includeItemsFromAllDrives=True, supportsAllDrives=True,
             ).execute()
             for f in resp.get("files", []):
+                # Atalho do Drive: aponta pro arquivo/pasta real. Sem resolver, o download
+                # falha com 403 fileNotDownloadable e derrubava o scan da unidade inteira.
+                sc = f.get("shortcutDetails") or {}
+                if f.get("mimeType") == "application/vnd.google-apps.shortcut" and sc.get("targetId"):
+                    f["id"] = sc["targetId"]
+                    f["mimeType"] = sc.get("targetMimeType") or f["mimeType"]
                 if f.get("name"):
                     f["name"] = unicodedata.normalize("NFC", f["name"])
                 files.append(f)

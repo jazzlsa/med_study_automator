@@ -265,11 +265,20 @@ class DriveApiScanner:
                 continue
             name = entry["name"]
             ext = Path(name).suffix.lower()
-            if ext in SLIDE_EXTS:
-                slides.append(str(self._client.download_file(entry["id"], download_dir / name)))
-            elif ext in AUDIO_EXTS:
-                audios.append(str(self._client.download_file(entry["id"], download_dir / name)))
-            else:
+            if entry["mimeType"].startswith("application/vnd.google-apps."):
+                logger.warning(f"Arquivo '{name}' é do tipo Google ({entry['mimeType']}), não baixável - ignorando.")
+                continue
+            try:
+                if ext in SLIDE_EXTS:
+                    slides.append(str(self._client.download_file(entry["id"], download_dir / name)))
+                    continue
+                if ext in AUDIO_EXTS:
+                    audios.append(str(self._client.download_file(entry["id"], download_dir / name)))
+                    continue
+            except Exception as e:
+                logger.warning(f"Falha ao baixar '{name}' ({e}) - ignorando só esse arquivo.")
+                continue
+            if True:
                 sniffed = sniff_kind_from_mime_type(entry.get("mimeType"))
                 if sniffed:
                     kind, detected_ext = sniffed
