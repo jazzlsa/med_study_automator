@@ -77,6 +77,14 @@ def _materialize_with_extension(original_path: Path, ext: str) -> Path:
 MARCA_AGUARDANDO = "AGUARDANDO"
 
 
+def _nome_seguro(name: str) -> str:
+    """Nome de pasta/arquivo sem separadores de caminho (o Drive aceita "/" no nome; no disco vira subpasta
+    e o upload ao NotebookLM falha) e sem espaço sobrando antes da extensão."""
+    base = name.replace("/", "-").replace("\\", "-").strip()
+    stem, dot, ext = base.rpartition(".")
+    return (stem.rstrip() + dot + ext) if dot and len(ext) <= 5 else base
+
+
 class DriveFolderScanner:
     """Escaneia o diretório local do Google Drive sincronizado (Drive Desktop, ex.:
     G:\\Meu Drive\\...) para encontrar aulas, PDFs e áudios. Usado quando
@@ -270,10 +278,10 @@ class DriveApiScanner:
                 continue
             try:
                 if ext in SLIDE_EXTS:
-                    slides.append(str(self._client.download_file(entry["id"], download_dir / name)))
+                    slides.append(str(self._client.download_file(entry["id"], download_dir / _nome_seguro(name))))
                     continue
                 if ext in AUDIO_EXTS:
-                    audios.append(str(self._client.download_file(entry["id"], download_dir / name)))
+                    audios.append(str(self._client.download_file(entry["id"], download_dir / _nome_seguro(name))))
                     continue
             except Exception as e:
                 logger.warning(f"Falha ao baixar '{name}' ({e}) - ignorando só esse arquivo.")
@@ -282,7 +290,7 @@ class DriveApiScanner:
                 sniffed = sniff_kind_from_mime_type(entry.get("mimeType"))
                 if sniffed:
                     kind, detected_ext = sniffed
-                    dest_name = f"{name}{detected_ext}"
+                    dest_name = _nome_seguro(f"{name}{detected_ext}")
                     logger.info(
                         f"Arquivo '{name}' sem extensão reconhecida - mimeType do Drive "
                         f"('{entry.get('mimeType')}') identifica como {kind} ('{detected_ext}')."
@@ -306,7 +314,7 @@ class DriveApiScanner:
                 return []
         except Exception as e:
             logger.warning(f"[{unit_code}] Não consegui checar a marca {MARCA_AGUARDANDO} em '{lesson_folder['name']}': {e}")
-        download_dir = self._download_root / unit_code / lesson_folder["name"]
+        download_dir = self._download_root / unit_code / _nome_seguro(lesson_folder["name"])
         direct = self._find_direct_materials(lesson_folder["id"], download_dir)
         if direct["slide"] or direct["audio"]:
             return [{
@@ -318,7 +326,7 @@ class DriveApiScanner:
 
         sub_lessons = []
         for subfolder in sorted(self._list_subfolders(lesson_folder["id"]), key=lambda f: f["name"]):
-            sub_download_dir = self._download_root / unit_code / lesson_folder["name"] / subfolder["name"]
+            sub_download_dir = self._download_root / unit_code / _nome_seguro(lesson_folder["name"]) / _nome_seguro(subfolder["name"])
             sub_materials = self._find_direct_materials(subfolder["id"], sub_download_dir)
             if sub_materials["slide"] or sub_materials["audio"]:
                 sub_lessons.append({
