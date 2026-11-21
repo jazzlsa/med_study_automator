@@ -78,6 +78,16 @@ def run() -> int:
         logger.warning("Outra execução do pipeline já está em andamento (lock de execução única) - esta rodada aborta.")
         return 0
 
+    # Cache de download do Drive: o scan baixa de novo TODOS os materiais a cada rodada, então nada daqui
+    # é reaproveitado. Sem apagar, as pastas se acumulavam (12 GB no Pi, disco a 92%) porque o arquivo
+    # sempre estava "recente". Apagar no começo é seguro: só roda depois de pegar o RunLock, então não há outra rodada usando o cache.
+    try:
+        import shutil
+        from config.settings import settings
+        shutil.rmtree(Path(settings.storage.temp_dir) / "drive_cache", ignore_errors=True)
+    except Exception as e:
+        logger.warning(f"Não consegui limpar o cache de download do Drive: {e}")
+
     new_lessons_found = 0
     succeeded: list = []
     failed: list = []  # list[(nome, motivo)]
