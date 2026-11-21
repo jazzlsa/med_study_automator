@@ -279,6 +279,9 @@ Retorne ESTRITAMENTE um objeto JSON válido no formato:
                     timeout=300,
                 )
                 if process.returncode == 0 and process.stdout.strip():
+                    if not process.stdout.lstrip().startswith(("{", "[", "`")):
+                        # Resposta que nem parece JSON (ex.: aviso de limite de uso): registra pra diagnosticar.
+                        logger.warning(f"Claude CLI respondeu texto sem JSON: {process.stdout.strip()[:300]}")
                     data = self._parse_json_response(process.stdout, "claude_cli")
                     flashcards = data.get("flashcards") or []
                     if flashcards:
