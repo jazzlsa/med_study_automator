@@ -112,6 +112,16 @@ def run() -> int:
         for lesson in lessons:
             lesson_name = lesson["lesson_title"]
 
+            # Aula feita só com áudio: se os slides entraram na pasta depois, refaz TUDO (notebook novo, com slide + áudio).
+            row = db_manager.get_lesson_status(unit_code, lesson_name)
+            if (row and row["status"] == "success" and (row.get("details") or "").startswith("SEM_SLIDES")
+                    and lesson.get("slide")):
+                logger.info(f"[{unit_code}] '{lesson_name}': slides apareceram na pasta - refazendo a aula do zero (slide + áudio).")
+                old_nb = row.get("notebook_id")
+                if old_nb and old_nb != "N/A" and not notebooklm_client.delete_notebook(old_nb):
+                    logger.warning(f"[{unit_code}] '{lesson_name}': não consegui apagar o notebook antigo ({old_nb}); sigo mesmo assim.")
+                db_manager.delete_lesson(unit_code, lesson_name)
+
             if db_manager.is_lesson_completed(unit_code, lesson_name):
                 logger.debug(f"[{unit_code}] '{lesson_name}' já processada com sucesso - pulando.")
                 continue

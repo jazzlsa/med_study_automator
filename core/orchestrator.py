@@ -13,6 +13,10 @@ from core.slide_extractor import slide_extractor
 from database.db import db_manager
 from utils.logger import logger
 
+# Marca gravada em `details` quando a aula foi processada SÓ com áudio (sem slides). O auto_pipeline refaz tudo
+# (notebook novo + resumo) se, depois, os slides aparecerem na pasta da aula.
+SEM_SLIDES_MARCA = "SEM_SLIDES: processada só com o áudio; se entrarem slides na pasta, refazer tudo"
+
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*]')
 
 
@@ -380,7 +384,10 @@ class Orchestrator:
                 lesson_name=lesson_name,
                 notebook_id=notebook_id or "N/A",
                 status=status,
-                details="; ".join(step_failures) if step_failures else None,
+                details=(
+                    "; ".join(step_failures) if step_failures
+                    else (SEM_SLIDES_MARCA if (audios and not slides) else None)
+                ),
             )
 
             if step_failures:

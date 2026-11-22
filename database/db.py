@@ -114,6 +114,12 @@ class DatabaseManager:
             logger.error(f"Erro ao buscar status da aula {lesson_name}: {e}")
         return None
 
+    def delete_lesson(self, unit_code: str, lesson_name: str) -> None:
+        """Remove o registro da aula (ela volta a ser processada do zero na próxima varredura)."""
+        with self._get_connection() as conn:
+            conn.execute("DELETE FROM completed_lessons WHERE unit_code = ? AND lesson_name = ?", (unit_code, lesson_name))
+            conn.commit()
+
     def is_lesson_completed(self, unit_code: str, lesson_name: str) -> bool:
         """Checagem rápida: essa aula específica já foi processada com SUCESSO?
 

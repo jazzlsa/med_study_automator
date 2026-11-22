@@ -428,6 +428,18 @@ class NotebookLMClient:
             if a.get("status") in ("completed", "in_progress", "pending") and a.get("type_id")
         }
 
+    def delete_notebook(self, notebook_id: str) -> bool:
+        """Apaga o notebook inteiro (tenta cada conta/perfil: não se sabe qual é a dona). True se apagou."""
+        original = self.profile
+        try:
+            for profile in _creation_order():
+                self.profile = profile
+                if self._run_cli(["delete", "-n", notebook_id, "-y"], timeout=120)["success"]:
+                    return True
+            return False
+        finally:
+            self.profile = original
+
     def count_owned_notebooks(self) -> Optional[int]:
         """Quantos notebooks a conta possui (is_owner). None se a listagem falhar."""
         result = self._run_cli(["list"], timeout=SOURCE_ADD_TIMEOUT_SECONDS)
