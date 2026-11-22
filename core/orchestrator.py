@@ -128,6 +128,9 @@ class Orchestrator:
                 sharing_result = notebooklm_client.set_public_sharing(notebook_id)
                 if sharing_result.get("share_url"):
                     notebook_url = sharing_result["share_url"]
+                if not sharing_result.get("success"):
+                    # Notebook privado = turma sem acesso: não marca a aula como concluída; retenta na próxima rodada.
+                    step_failures.append(f"compartilhamento público do notebook ({sharing_result.get('error')})")
 
             # --- Resolução do insumo de texto dos flashcards + estado das fontes ---
             # Duas origens possíveis, decididas antes de gerar os cards:
@@ -181,6 +184,9 @@ class Orchestrator:
                         "Áudio-primeiro sem Source Guide disponível (fontes não prontas ou guia vazio) "
                         "- caindo pro Gemini (transcrição)."
                     )
+
+            if audio_first_used and not tema:
+                tema = self._extract_tema_from_audio_names(audios)
 
             audio_pendente = audio_first and not audio_first_used
             if audio_pendente:
@@ -402,6 +408,16 @@ class Orchestrator:
         except Exception as e:
             logger.error(f"Erro crítico no orquestrador da aula {lesson_name}: {e}")
             return False
+
+    @staticmethod
+    def _extract_tema_from_audio_names(audios: List[Path]) -> str:
+        """Aula só com áudio (sem slide): o tema vem do nome do arquivo quando ele
+        segue 'Aula 11 - Microcirculação.m4a'. Nomes sem esse formato dão vazio."""
+        for a in audios:
+            m = re.match(r"^\s*Aula\s+\d+\s*[-–]\s*(.+?)\s*$", Path(a).stem, flags=re.IGNORECASE)
+            if m:
+                return m.group(1)
+        return ""
 
     @staticmethod
     def _extract_tema_from_slides(slides: List[Path]) -> str:

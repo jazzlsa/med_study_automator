@@ -328,6 +328,15 @@ class DriveApiScanner:
         for subfolder in sorted(self._list_subfolders(lesson_folder["id"]), key=lambda f: f["name"]):
             sub_download_dir = self._download_root / unit_code / _nome_seguro(lesson_folder["name"]) / _nome_seguro(subfolder["name"])
             sub_materials = self._find_direct_materials(subfolder["id"], sub_download_dir)
+            if not (sub_materials["slide"] or sub_materials["audio"]):
+                # Parte com o material em sub-subpastas (ex.: "Aula 15 - Parte 1" com "Vídeo 1/2/3"):
+                # junta tudo numa aula só, com o nome da parte (UC16 Aula 15 Parte 1 era ignorada).
+                for deeper in sorted(self._list_subfolders(subfolder["id"]), key=lambda f: f["name"]):
+                    deeper_materials = self._find_direct_materials(
+                        deeper["id"], sub_download_dir / _nome_seguro(deeper["name"])
+                    )
+                    sub_materials["slide"].extend(deeper_materials["slide"])
+                    sub_materials["audio"].extend(deeper_materials["audio"])
             if sub_materials["slide"] or sub_materials["audio"]:
                 sub_lessons.append({
                     "lesson_title": subfolder["name"],

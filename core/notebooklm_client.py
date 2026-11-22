@@ -550,7 +550,14 @@ class NotebookLMClient:
         (usado antes pra montar o link salvo na planilha) dava "Notebook não
         encontrado" pra quem abria o link, mesmo o notebook existindo e sendo
         público - o domínio certo é sem o "lm"."""
-        result = self._run_cli(["share", "public", "-n", notebook_id, "--enable"], timeout=CREATE_TIMEOUT_SECONDS)
+        # O comando às vezes estoura o timeout (UC06 Aula 11, 2026-11-22: ficou privado);
+        # tenta até 3 vezes, com timeout maior, antes de desistir.
+        result = {"success": False, "error": None, "data": None}
+        for attempt in range(1, 4):
+            result = self._run_cli(["share", "public", "-n", notebook_id, "--enable"], timeout=CREATE_TIMEOUT_SECONDS * 2)
+            if result["success"]:
+                break
+            logger.warning(f"Compartilhamento público do notebook {notebook_id}: tentativa {attempt}/3 falhou: {result['error']}")
         if not result["success"]:
             logger.warning(f"Não consegui ativar o compartilhamento público do notebook {notebook_id}: {result['error']}")
             return {"success": False, "share_url": None, "error": result["error"]}
