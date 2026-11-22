@@ -234,11 +234,17 @@ class Orchestrator:
                 unit_code, _safe_filename(lesson_name)
             )
 
+            # SKIP_FLASHCARDS=1 no .env: pausa a geração de flashcards (foco só em notebooks/planilha/site).
+            # A aula fecha como sucesso sem flashcards; pra gerar depois, é preciso reprocessar a aula.
+            skip_fc = os.getenv("SKIP_FLASHCARDS", "").strip().lower() in ("1", "true", "sim", "yes")
+
             if apkg_ja_publicado:
                 logger.info(
                     "Flashcards desta aula já foram gerados e publicados numa tentativa anterior "
                     "- pulando a geração (só completa o que faltou)."
                 )
+            elif skip_fc:
+                logger.info("Geração de flashcards PAUSADA (SKIP_FLASHCARDS=1) - seguindo só com notebook e planilha.")
             elif (transcript_text or slides) and not audio_pendente:
                 logger.info("Solicitando geração de flashcards médicos ao Claude...")
                 claude_res = claude_client.generate_flashcards(
@@ -301,7 +307,7 @@ class Orchestrator:
                 # áudio-primeiro não há fallback do Gemini, então com o Claude fora do ar
                 # as aulas ficavam sem .apkg nenhum e mesmo assim eram marcadas 'success'.
                 logger.warning("Nenhum flashcard gerado (Claude e Gemini) para esta aula - .apkg não foi gerado.")
-                if not audio_pendente:
+                if not audio_pendente and not skip_fc:
                     step_failures.append("geração de flashcards (nenhum flashcard gerado - Claude indisponível?)")
 
             if create_result["success"]:
